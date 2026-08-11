@@ -403,6 +403,174 @@ function writeVerifyPng(anim, ident, dir) {
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 
+// ── Legacy claudepix set (fork addition) ─────────────────────────────────────
+// The 20x20 pixel-art animations this project shipped before the official art
+// (tools/claudepix_data/, scraped by tools/scrape_claudepix.js). They're kept
+// alongside the official set rather than upscaled into it: 20 x LEGACY_SCALE
+// is exactly the 60x60 grid, so the engine draws each cell as a 3x3 block and
+// they appear at their original on-screen size for a ninth of the flash.
+// Their ox/oy are raw grid cells (they were never authored on the 55x37 art
+// stage), which is what scale > 1 signals to compose_stage().
+const LEGACY_DIR = path.join(__dirname, 'claudepix_data');
+// The claudepix creature is drawn coarser than the official art: 15x13 cells
+// against Clawd's 24x16. Left at 1:1 it reads as a half-size cousin (195 cells
+// of bounding box against 384), and doubling overshoots as badly the other way
+// (780). Three cells per two lands at 440 — the same visual mass, at the cost
+// of every other row and column being one cell wider, which this blocky art
+// carries fine.
+const LEGACY_NUM = 3, LEGACY_DEN = 2;
+// …except the ones drawn as full-bleed scenes: their content runs off the
+// 20x20 canvas (the DJ's headphones and decks are cut on every frame), so
+// cropping them to a bounding box puts that cut in the middle of the screen.
+// They keep the whole canvas and one art cell covers three grid cells, which
+// maps 20x20 onto the 60x60 grid exactly — the cuts land on the bezel, where
+// they were drawn to land. The official set has the same two registers:
+// 24x16 characters and 50x33 scenes.
+const LEGACY_SCENES = new Set([
+  'dance djmix', 'dance sway dj', 'dance bounce dj', 'work think',
+  'expression sleep',
+]);
+const SCENE_SCALE = 3;
+
+// Nearest-neighbour resample of indexed cells.
+function resample(grid, w, h) {
+  const w2 = Math.round(w * LEGACY_NUM / LEGACY_DEN);
+  const h2 = Math.round(h * LEGACY_NUM / LEGACY_DEN);
+  const out = [];
+  for (let y = 0; y < h2; y++) {
+    const row = [];
+    const sy = Math.min(h - 1, Math.floor(y * LEGACY_DEN / LEGACY_NUM));
+    for (let x = 0; x < w2; x++)
+      row.push(grid[sy][Math.min(w - 1, Math.floor(x * LEGACY_DEN / LEGACY_NUM))]);
+    out.push(row);
+  }
+  return out;
+}
+
+// The official art's load-bearing colors — the reference the legacy set is
+// recolored against, derived from the art itself so it follows upstream.
+// Weighted by cells drawn and cut at REFERENCE_MIN_SHARE: a one-off highlight
+// can sit closer to a claudepix color than Clawd's own body does, and snapping
+// the body onto a stray blush is exactly the mismatch this is here to fix.
+const REFERENCE_MIN_SHARE = 0.005;
+
+function officialColors(entries) {
+  const cells = new Map();     // "r,g,b" -> count
+  let total = 0;
+  for (const { anim } of entries)
+    for (const f of anim.frames)
+      for (const code of f) {
+        if (!code) continue;   // index 0 is the background
+        const key = anim.palette[code].join();
+        cells.set(key, (cells.get(key) || 0) + 1);
+        total++;
+      }
+  return [...cells.entries()]
+    .filter(([, n]) => n >= total * REFERENCE_MIN_SHARE)
+    .sort((a, b) => b[1] - a[1])
+    .map(([key]) => key.split(",").map(Number));
+}
+
+// Green-heavy weighting: a rough stand-in for perceived distance, enough to
+// put a color in the right family (body, ink, ivory, grey, blue).
+const colorDist2 = (a, b) =>
+  2 * (a[0] - b[0]) ** 2 + 4 * (a[1] - b[1]) ** 2 + 3 * (a[2] - b[2]) ** 2;
+
+// Snap a claudepix palette onto the official colors so both sets read as the
+// same creature. Shades that land on the same official color would flatten the
+// art (the laptop scene has four greys), so a repeat blends toward its target
+// instead of replacing it — same family, shading intact.
+function alignPalette(palette, reference) {
+  const claimed = new Map();
+  return palette.map((c, i) => {
+    if (i === 0) return c;                       // index 0 is the background
+    const near = reference.reduce((best, r) =>
+      colorDist2(c, r) < colorDist2(c, best) ? r : best, reference[0]);
+    const key = near.join();
+    const blend = claimed.get(key) || 0;
+    claimed.set(key, blend + 1);
+    if (!blend) return near;
+    const w = 0.6;                               // 60% official, 40% original
+    return near.map((v, k) => Math.round(v * w + c[k] * (1 - w)));
+  });
+}
+
+function loadLegacy(reference) {
+  const index = path.join(LEGACY_DIR, '_index.json');
+  if (!fs.existsSync(index)) {
+    // Not fatal — upstream's own set still builds — but the fork's activity
+    // tiers name these animations, so say it loudly rather than emitting a
+    // header whose names silently fail to resolve at runtime.
+    console.warn(`legacy: ${index} missing — claudepix animations not emitted`);
+    return [];
+  }
+  const out = [];
+  for (const meta of JSON.parse(fs.readFileSync(index, 'utf8'))) {
+    const file = path.join(LEGACY_DIR, meta.filename.replace(/\.html$/, '.json'));
+    if (!fs.existsSync(file)) { console.warn(`legacy: missing ${file}`); continue; }
+    const d = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const h0 = d.frames[0].grid.length, w0 = d.frames[0].grid[0].length;
+    // "transparent" is index 0 — the same background convention as the
+    // official set, so it maps straight onto COL_EMPTY. #RGB shorthand is
+    // expanded first (one animation uses it).
+    const palette = d.palette.map(c => {
+      if (c === 'transparent') return [0, 0, 0];
+      const hex = c.length === 4 ? '#' + [...c.slice(1)].map(x => x + x).join('') : c;
+      return [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+    });
+    // Crop to the union bounding box across frames, exactly as buildAnim()
+    // does for the official art, then place the crop on the shared art stage:
+    // centered, standing on the stage floor. One cell means one cell in both
+    // sets, so the two never look like different zoom levels — and the whole
+    // thing is ordinary stage art the renderer needs no special case for.
+    const pal = alignPalette(palette, reference);
+    if (LEGACY_SCENES.has(d.name)) {          // full-bleed: keep the canvas
+      out.push({
+        ident: safeIdent(d.name),
+        meta: { name: d.name, category: 'claudepix' },
+        anim: {
+          w: w0, h: h0, ox: 0, oy: 0, scale: SCENE_SCALE,
+          frames: d.frames.map(f => Uint8Array.from(f.grid.flat())),
+          holds: d.frames.map(f => f.hold),
+          palette: pal,
+          loop: [0, d.frames.length - 1],
+        },
+      });
+      continue;
+    }
+    const grids = d.frames.map(f => resample(f.grid, w0, h0));
+    const gh = grids[0].length, gw = grids[0][0].length;
+    let x0 = gw, y0 = gh, x1 = -1, y1 = -1;
+    for (const g of grids)
+      for (let y = 0; y < gh; y++)
+        for (let x = 0; x < gw; x++)
+          if (g[y][x]) {
+            if (x < x0) x0 = x;
+            if (x > x1) x1 = x;
+            if (y < y0) y0 = y;
+            if (y > y1) y1 = y;
+          }
+    const w = x1 - x0 + 1, h = y1 - y0 + 1;
+    if (w > STAGE_W || h > STAGE_H)
+      throw new Error(`legacy ${d.name}: ${w}x${h} doesn't fit the ${STAGE_W}x${STAGE_H} stage`);
+    out.push({
+      ident: safeIdent(d.name),
+      meta: { name: d.name, category: 'claudepix' },
+      anim: {
+        w, h,
+        ox: (STAGE_W - w) >> 1,               // centered on the art stage
+        oy: STAGE_H - h,                      // feet on the stage floor
+        frames: grids.map(g => Uint8Array.from(
+          g.slice(y0, y1 + 1).flatMap(row => row.slice(x0, x1 + 1)))),
+        holds: d.frames.map(f => f.hold),
+        palette: pal,
+        loop: [0, d.frames.length - 1],       // whole file: no intro/outro
+      },
+    });
+  }
+  return out;
+}
+
 function main() {
   if (VERIFY_DIR) fs.mkdirSync(VERIFY_DIR, { recursive: true });
 
@@ -425,6 +593,9 @@ function main() {
   out += '    uint16_t frame_count;\n';
   out += '    uint16_t loop_start, loop_end; // loopable region (defaults to whole file)\n';
   out += '    uint8_t  palette_count;\n';
+  out += '    uint8_t  scale;            // grid cells per art cell: 1 = art on\n';
+  out += '                               // the 55x37 stage, >1 = a full-bleed\n';
+  out += '                               // scene whose ox/oy are raw grid cells\n';
   out += '    const uint16_t *palette;   // RGB565; index 0 = background\n';
   out += '    const uint8_t  *frames;    // frame_count x (w*h) cells\n';
   out += '    const uint16_t *holds;     // ms per frame\n';
@@ -548,7 +719,8 @@ function main() {
     }
   }
 
-  const emitted = entries.filter(e => e.meta.emit !== false);
+  const official = entries.filter(e => e.meta.emit !== false);
+  const emitted = official.concat(loadLegacy(officialColors(official)));
   for (const { ident, meta, anim } of emitted) {
     const cellBytes = anim.frames.length * anim.w * anim.h;
     totalBytes += cellBytes;
@@ -580,7 +752,7 @@ function main() {
   for (const { ident, meta, anim } of emitted) {
     out += `    {"${meta.name}", "${meta.category}", ${anim.w}, ${anim.h}, ` +
       `${anim.ox}, ${anim.oy}, ${anim.frames.length}, ${anim.loop[0]}, ${anim.loop[1]}, ` +
-      `${anim.palette.length}, ` +
+      `${anim.palette.length}, ${anim.scale || 1}, ` +
       `splash_${ident}_palette, splash_${ident}_frames, splash_${ident}_holds},\n`;
   }
   out += '};\n';

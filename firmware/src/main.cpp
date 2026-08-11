@@ -214,6 +214,9 @@ static void check_serial_cmd() {
             // (a fresh flash boots into the splash — see CLAUDE.md).
             else if (strcmp(cmd_buf, "usage") == 0)  ui_show_screen(SCREEN_USAGE);
             else if (strcmp(cmd_buf, "splash") == 0) ui_show_screen(SCREEN_SPLASH);
+            // Step through the animation catalog (prints the name it lands
+            // on) — the only way to eyeball one that no group/tier picks.
+            else if (strcmp(cmd_buf, "anim") == 0)   splash_next();
             cmd_pos = 0;
         } else if (cmd_pos < CMD_BUF_SIZE - 1) {
             cmd_buf[cmd_pos++] = c;

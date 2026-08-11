@@ -151,6 +151,7 @@ static const Strings STR_RU = {
 
 // One lookup used by both init and set — adding a language is one row here
 // plus its STR_XX table.
+#define LANG_CODE_MAX 8      // "en"/"ru" today, with room to grow
 static const struct { const char* code; const Strings* table; } LANGS[] = {
     { "en", &STR_EN },
     { "ru", &STR_RU },
@@ -166,11 +167,14 @@ const Strings* S = &STR_EN;
 
 void strings_init(void) {
     // Same open/get/close idiom as brightness.cpp — no held-open handle.
+    // The char-buffer overload (not the Arduino String one) keeps this
+    // building against the desktop simulator's Preferences shim too.
     Preferences prefs;
     prefs.begin("clawdmeter", true);
-    String lang = prefs.getString("lang", "");
+    char lang[LANG_CODE_MAX] = {0};
+    prefs.getString("lang", lang, sizeof(lang));
     prefs.end();
-    const Strings* t = lang_lookup(lang.c_str());
+    const Strings* t = lang_lookup(lang);
     if (t) S = t;
 }
 
