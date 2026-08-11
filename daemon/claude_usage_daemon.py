@@ -378,6 +378,12 @@ API_BODY = {
 }
 
 
+class TokenExpired(Exception):
+    """Kept for upstream parity — our poll_api reports a dead token as the
+    "auth" error code instead of raising, so the device can name the cause.
+    Same free-ride posture either way: Claude Code owns refreshing."""
+
+
 def log(msg: str) -> None:
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
@@ -432,11 +438,29 @@ def _extract_credentials(blob: str, source: str) -> Credentials | None:
     return None
 
 
+def _decode_keychain_blob(raw: str) -> str:
+    """Transparently decode a hex-dumped Keychain secret back to text.
+
+    ``security … -w`` prints the password as a continuous hex string whenever
+    the stored bytes aren't cleanly printable (e.g. an embedded newline). A
+    normal credentials blob is JSON, which is never valid hex (it contains
+    '{', '"', …), so all-hex detection is unambiguous and safe.
+    """
+    s = raw.strip()
+    if s and len(s) % 2 == 0 and re.fullmatch(r"[0-9a-fA-F]+", s):
+        try:
+            return bytes.fromhex(s).decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            return raw
+    return raw
+
+
 def _read_keychain(service: str, *, optional: bool = False) -> Credentials | None:
     """Credentials from a Keychain generic-password item, or None.
 
     ``optional`` silences the not-found log for items the user may simply
-    never have created (the dedicated long-lived token).
+    never have created (the dedicated long-lived token). The secret may come
+    back hex-dumped (see _decode_keychain_blob), so decode before parsing.
     """
     try:
         out = subprocess.run(
@@ -461,7 +485,8 @@ def _read_keychain(service: str, *, optional: bool = False) -> Credentials | Non
     except (FileNotFoundError, subprocess.TimeoutExpired) as e:
         log(f"Keychain access error: {e}")
         return None
-    return _extract_credentials(out.stdout, f"keychain:{service}")
+    return _extract_credentials(_decode_keychain_blob(out.stdout),
+                                f"keychain:{service}")
 
 
 def read_config_dirs() -> list[Path]:
@@ -1009,8 +1034,15 @@ async def poll_active_payload(selector: PlanSelector = _SELECTOR) -> dict:
     """Poll every configured config dir and return the active plan's payload.
 
     Returns an {"ok": False, "err": ...} error beat when no dir yields a
-    usable payload this cycle. A single configured dir (the default) collapses
-    to exactly the old single-poll path.
+    usable payload this cycle — the device then idles and names the cause
+    rather than passing stale numbers off as live. A single configured dir
+    (the default) collapses to exactly the old single-poll path.
+
+    Free-ride, as upstream: a 401 means that dir's token expired and only its
+    owner can re-seed it. We never call the refresh endpoint — two clients
+    rotating one refresh token trip reuse-detection and a shared 429 bucket.
+    Instead token_sources_for offers a long-lived token of our own first, so
+    an expired Claude Code token doesn't have to mean no data.
     """
     global _last_fingerprint
     dirs = read_config_dirs()

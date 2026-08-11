@@ -33,7 +33,7 @@ bool splash_is_active(void);
 lv_obj_t* splash_get_root(void);
 
 // Mini animated creature for embedding elsewhere (e.g. the idle screen).
-// Renders the named claudepix animation (e.g. "expression sleep") at ~px×px
+// Renders the named official animation (e.g. "cloud") at ~px×px
 // inside `parent`; returns the canvas object (position it with lv_obj_align) or
 // NULL if the animation isn't found / allocation fails. Drive it with
 // splash_mini_tick(). One mini creature at a time.
@@ -42,3 +42,10 @@ void splash_mini_tick(void);
 // Switch the existing mini creature to another animation (same canvas/buffer).
 // Returns false if the name isn't found or no mini was created yet.
 bool splash_mini_set_anim(const char *anim_name);
+
+// Corner mascot (usage screen, PSRAM boards): the still Clawd idles in the
+// logo slot, does occasional acts, and takes walk-off/lurk/walk-back trips.
+// feet_y = px of the art's ground line; cell = px per art cell in the corner.
+lv_obj_t* splash_mascot_create(lv_obj_t *parent, int slot_x, int feet_y, int cell);
+void splash_mascot_tick(void);
+void splash_mascot_set_visible(bool v);
