@@ -21,9 +21,9 @@ void splash_hide(void);
 // trigger a re-pick when the rate group changes mid-display.
 void splash_pick_for_current_rate(void);
 // Live host activity: <0 unknown (usage-rate picks stay), else the count of
-// working Claude sessions. 0 → Idle rotation, 1-2 → Work rotation, then fixed
-// DJ tracks: 3 → dance sway dj, 4 → dance bounce dj, 5+ → dance djmix at
-// double tempo.
+// working Claude sessions. When known it owns the rotation, escalating with
+// the workload through the ACT_NAMES tiers in splash.cpp — resting, work,
+// picking up, excited, and finally the dance floor at double tempo.
 void splash_set_activity(int working_sessions);
 
 // True when splash is currently rendering (used to gate re-picks).
@@ -33,7 +33,7 @@ bool splash_is_active(void);
 lv_obj_t* splash_get_root(void);
 
 // Mini animated creature for embedding elsewhere (e.g. the idle screen).
-// Renders the named claudepix animation (e.g. "expression sleep") at ~px×px
+// Renders the named official animation (e.g. "cloud") at ~px×px
 // inside `parent`; returns the canvas object (position it with lv_obj_align) or
 // NULL if the animation isn't found / allocation fails. Drive it with
 // splash_mini_tick(). One mini creature at a time.
@@ -42,3 +42,10 @@ void splash_mini_tick(void);
 // Switch the existing mini creature to another animation (same canvas/buffer).
 // Returns false if the name isn't found or no mini was created yet.
 bool splash_mini_set_anim(const char *anim_name);
+
+// Corner mascot (usage screen, PSRAM boards): the still Clawd idles in the
+// logo slot, does occasional acts, and takes walk-off/lurk/walk-back trips.
+// feet_y = px of the art's ground line; cell = px per art cell in the corner.
+lv_obj_t* splash_mascot_create(lv_obj_t *parent, int slot_x, int feet_y, int cell);
+void splash_mascot_tick(void);
+void splash_mascot_set_visible(bool v);
