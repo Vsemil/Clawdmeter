@@ -13,4 +13,9 @@ public:
     void end(void) {}
     uint8_t getUChar(const char* key, uint8_t def = 0);
     size_t  putUChar(const char* key, uint8_t value);
+    // Char-buffer string pair (the UI language lives here). Mirrors the
+    // ESP32 API's non-String overloads; the Arduino String ones don't exist
+    // in the sim and shared code must not need them.
+    size_t  getString(const char* key, char* value, size_t maxLen);
+    size_t  putString(const char* key, const char* value);
 };

@@ -197,8 +197,27 @@ static void walk_choreo(const splash_anim_def_t *a) {
     }
 }
 
+// A full-bleed scene (scale > 1): drawn to fill a square screen, its content
+// running off the canvas on purpose, so it covers the whole grid and its cuts
+// land on the bezel. ox/oy are raw grid cells here, and it never walks or
+// mirrors — which keeps this its own short path and leaves the stage one
+// exactly as upstream wrote it. Each row is expanded once, then copied down.
+static void compose_scene(const splash_anim_def_t *a, const uint8_t *src) {
+    const int s = a->scale, ax = a->ox * s, ay = a->oy * s;
+    for (int r = 0; r < a->h; r++) {
+        const int dy = ay + r * s;
+        if (dy < 0 || dy + s > GRID) continue;
+        uint8_t *row = &stage_cells[dy * GRID + ax];
+        for (int c = 0; c < a->w; c++) memset(row + c * s, src[r * a->w + c], s);
+        for (int sr = 1; sr < s; sr++) memcpy(row + sr * GRID, row, a->w * s);
+    }
+}
+
 static const uint8_t* compose_stage(const splash_anim_def_t *a, uint16_t frame) {
     memset(stage_cells, 0, sizeof(stage_cells));
+    const uint8_t *src = &a->frames[(size_t)frame * a->w * a->h];
+    if (a->scale > 1) { compose_scene(a, src); return stage_cells; }
+
     // Horizontal edge snap: art touching its canvas's left/right edge was
     // designed to hang off that edge (lurking peeks in from the left), so it
     // goes to the true screen edge instead of the anchored stage edge. Not
@@ -210,14 +229,13 @@ static const uint8_t* compose_stage(const splash_anim_def_t *a, uint16_t frame) 
     if (walk_active)          ax = walk_x;
     const bool mirror = walk_active && walk_face < 0;
     const int ay = STAGE_ANCHOR_Y + a->oy;
-    const uint8_t *src = &a->frames[(size_t)frame * a->w * a->h];
+    int c0 = 0, c1 = a->w;                     // clip for partial off-screen x
+    if (ax + c0 < 0)     c0 = -ax;
+    if (ax + c1 > GRID)  c1 = GRID - ax;
+    if (c0 >= c1) return stage_cells;
     for (int r = 0; r < a->h; r++) {
         const int dy = ay + r;
         if (dy < 0 || dy >= GRID) continue;
-        int c0 = 0, c1 = a->w;                 // clip for partial off-screen x
-        if (ax + c0 < 0)     c0 = -ax;
-        if (ax + c1 > GRID)  c1 = GRID - ax;
-        if (c0 >= c1) continue;
         if (mirror) {
             for (int c = c0; c < c1; c++)
                 stage_cells[dy * GRID + ax + c] = src[r * a->w + (a->w - 1 - c)];
@@ -352,6 +370,8 @@ static void render_frame(const uint8_t *cells, const uint16_t *palette) {
 //      buffer, independent of the full-screen splash above. ----
 static lv_obj_t  *mini_canvas = NULL;
 static uint16_t  *mini_buf = NULL;
+static size_t     mini_cap = 0;    // bytes allocated for mini_buf
+static int        mini_px = 0;     // the box the caller gave us to fit into
 static int        mini_cell = 0;
 static int        mini_w = 0;      // canvas px, mini_anim->w * mini_cell
 static int        mini_h = 0;
@@ -383,25 +403,45 @@ static const splash_anim_def_t* find_anim(const char* name) {
     return NULL;
 }
 
-lv_obj_t* splash_mini_create(lv_obj_t *parent, const char *anim_name, int px) {
-    mini_anim = find_anim(anim_name);
-    if (!mini_anim) return NULL;
-    const int amax = (mini_anim->w > mini_anim->h) ? mini_anim->w : mini_anim->h;
-    mini_cell = px / amax;
-    if (mini_cell < 1) mini_cell = 1;
-    mini_w = mini_anim->w * mini_cell;
-    mini_h = mini_anim->h * mini_cell;
+// Fit `a` into the mini_px box and make sure the buffer holds it. Animations
+// differ in size (the official art especially), so switching one for another
+// has to re-fit — rendering a bigger animation into the previous one's buffer
+// would run off the end of it.
+static bool mini_fit(const splash_anim_def_t *a) {
+    const int amax = (a->w > a->h) ? a->w : a->h;
+    int cell = mini_px / amax;
+    if (cell < 1) cell = 1;
+    const size_t need = (size_t)a->w * cell * a->h * cell * 2;
+    if (need > mini_cap) {
 #ifdef BOARD_HAS_PSRAM
-    const uint32_t caps = MALLOC_CAP_SPIRAM;
+        const uint32_t caps = MALLOC_CAP_SPIRAM;
 #else
-    const uint32_t caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+        const uint32_t caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
 #endif
-    mini_buf = (uint16_t*)heap_caps_malloc(mini_w * mini_h * 2, caps);
-    if (!mini_buf) return NULL;
-    mini_canvas = lv_canvas_create(parent);
-    lv_canvas_set_buffer(mini_canvas, mini_buf, mini_w, mini_h, LV_COLOR_FORMAT_RGB565);
+        uint16_t *buf = (uint16_t*)heap_caps_malloc(need, caps);
+        if (!buf) return false;              // keep the old one; caller bails
+        heap_caps_free(mini_buf);
+        mini_buf = buf;
+        mini_cap = need;
+    }
+    mini_anim = a;
+    mini_cell = cell;
+    mini_w = a->w * cell;
+    mini_h = a->h * cell;
     mini_frame = 0;
     mini_started = millis();
+    if (mini_canvas)
+        lv_canvas_set_buffer(mini_canvas, mini_buf, mini_w, mini_h, LV_COLOR_FORMAT_RGB565);
+    return true;
+}
+
+lv_obj_t* splash_mini_create(lv_obj_t *parent, const char *anim_name, int px) {
+    const splash_anim_def_t *a = find_anim(anim_name);
+    if (!a) return NULL;
+    mini_px = px;
+    if (!mini_fit(a)) return NULL;
+    mini_canvas = lv_canvas_create(parent);
+    lv_canvas_set_buffer(mini_canvas, mini_buf, mini_w, mini_h, LV_COLOR_FORMAT_RGB565);
     mini_render();
     return mini_canvas;
 }
@@ -409,11 +449,8 @@ lv_obj_t* splash_mini_create(lv_obj_t *parent, const char *anim_name, int px) {
 bool splash_mini_set_anim(const char *anim_name) {
     if (!mini_buf) return false;
     const splash_anim_def_t* a = find_anim(anim_name);
-    if (!a) return false;
-    if (mini_anim == a) return true;
-    mini_anim = a;
-    mini_frame = 0;
-    mini_started = millis();
+    if (!a || mini_anim == a) return a != NULL;
+    if (!mini_fit(a)) return false;
     mini_render();
     return true;
 }
@@ -776,16 +813,16 @@ static void pick_for_activity(void);
 #define ACT_MAX        4
 #define ACT_TIER_DISCO 4
 static const char* ACT_NAMES[ACT_TIER_COUNT][ACT_MAX] = {
-    // 0 sessions — resting
-    { "lurking", "cloud", "sailing scene", NULL },
+    // 0 sessions — resting (the claudepix sleeper joins the official idlers)
+    { "expression sleep", "lurking", "cloud", "sailing scene" },
     // 1-2 — heads-down work
-    { "laptop", "magnifier", "pointing", "crab walking" },
-    // 3 — picking up
-    { "basketball", "skateboard", "soccer", NULL },
-    // 4 — excited
-    { "jumping", "trumpet", "waving", NULL },
-    // 5+ — disco, at double tempo
-    { "dancing", "jumping happy", NULL, NULL },
+    { "laptop", "work coding", "work think", "magnifier" },
+    // 3 — the DJ takes the booth
+    { "dance sway dj", NULL, NULL, NULL },
+    // 4 — busier set
+    { "dance bounce dj", NULL, NULL, NULL },
+    // 5+ — full disco, at double tempo
+    { "dance djmix", NULL, NULL, NULL },
 };
 static int8_t  act_lists[ACT_TIER_COUNT][ACT_MAX];
 static uint8_t act_size[ACT_TIER_COUNT] = {0};
@@ -805,6 +842,11 @@ static void resolve_act_lists(void) {
                 }
             }
         }
+        // The DJ tiers name claudepix art; a header regenerated without that
+        // set leaves them empty and pick_for_activity quietly falls back to
+        // the usage-rate groups. Say so instead of losing a tier in silence.
+        if (act_size[t] == 0)
+            Serial.printf("splash: activity tier %d has no animations\n", t);
     }
 }
 
