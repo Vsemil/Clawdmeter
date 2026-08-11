@@ -20,13 +20,28 @@ full details in [CHANGELOG-FORK.md](CHANGELOG-FORK.md):
   melody and shows a distinct screen when Claude is *waiting for your reply*,
   *needs a permission*, or *finished a long turn*, with the project name on
   screen. Background tasks and parallel agents are filtered out so autonomous
-  sessions never cry wolf.
+  sessions never cry wolf: an agent counts as finished only once it has
+  reported back to its session. Each alert draws its creature at random from
+  a small cast, so the screen still reads as a reaction when the same event
+  fires all day.
+- **Claude can write to the display** — `tools/clawdmeter_mcp.py` is a
+  dependency-free MCP server: `show_message` puts a line on the device with
+  the alert style of your choice, `clear_message` dismisses it, and
+  `device_status` reports the link and the last payload. It writes the same
+  flag file the hooks use, so nothing new is paired or flashed.
 - **Meeting reminders** — 15 and 5 minutes before a meeting, plus a separate
   "meeting started" alert. Sources: any ICS feed (published Outlook/Google
   calendar) or the macOS system calendar via a tiny signed EventKit helper.
 - **Live activity indicator** — an active-session counter, a "Resting" state,
   and splash animations that escalate with the number of working sessions
-  (3 sessions → DJ Clawd, 5+ → full disco at double tempo).
+  (idle → Clawd lurking, heads-down work → Clawd at the laptop, 5+ →
+  dancing at double tempo).
+- **Two animation sets, one look** — the 13 pixel-art animations this project
+  shipped before the official Clawd art are back alongside it, recolored onto
+  the official palette and sized to match: characters cropped and standing on
+  the shared floor, full-bleed scenes (the DJ decks, the laptop desk) kept
+  whole so their art still runs off the screen edges as drawn. 30 animations
+  in total.
 - **Better limit data** — usage comes from the read-only `/api/oauth/usage`
   endpoint (consumes nothing), a third gauge shows the model-scoped weekly
   limit (e.g. Fable), thresholds chime at 80/95%, and the reset countdown
@@ -57,7 +72,7 @@ The device boots into the splash. Tap the screen anywhere to switch to the Usage
 | ![Splash](screenshots/splash.gif) | ![Usage](screenshots/usage.png) |
 |   Splash; touch-toggle anytime    | Session and weekly utilization  |
 
-While the splash is up, the middle (PWR) button cycles animations. **Hold the power button for 3 seconds, then release, to put the device into pairing mode** — this clears the saved Bluetooth bond and re-advertises. The firmware also auto-rotates animations every 20 s within the current usage-rate group, so a long stretch on the splash isn't just one Clawd on loop.
+While the splash is up, the middle (PWR) button cycles animations. **Hold the power button for 3 seconds, then release, to put the device into pairing mode** — this clears the saved Bluetooth bond and re-advertises. The firmware also auto-rotates animations every 20 s, so a long stretch on the splash isn't just one Clawd on loop — within the current usage-rate group, or within the tier the number of working Claude sessions calls for once the daemon reports it. `anim` on the serial console steps through the whole catalog, which is the only way to see the animations no group picks.
 
 ## Hardware
 
@@ -138,7 +153,25 @@ claude setup-token
 security add-generic-password -U -s "Clawdmeter-token" -a "$USER" -w
 ```
 
-The daemon prefers that token and falls back to Claude Code's own entry
+#### Let Claude write to the display (optional)
+
+Register the MCP server once and any Claude Code session can raise the
+device's alert screen — same caption, color and melody as a hook event:
+
+```bash
+claude mcp add --scope user clawdmeter -- python3 tools/clawdmeter_mcp.py
+```
+
+It needs no venv and no extra packages. `show_message` takes the line to show
+(48 characters) and a style — `waiting`, `permission`, `done`, `meeting`,
+`meeting_started`; `clear_message` dismisses the screen; `device_status`
+reports whether the daemon is reporting, whether the BLE link is up, and the
+last numbers it sent. If the daemon is down or unpaired, `show_message` says
+so rather than pretending the message landed.
+
+#### Where the token comes from
+
+The daemon prefers the long-lived token and falls back to Claude Code's own entry
 whenever it is missing or rejected, so setting it up is risk-free — the log
 line `Using token from …` tells you which one is live. Point it at a different
 Keychain item with `token_keychain_service` in

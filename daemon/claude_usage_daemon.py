@@ -54,6 +54,8 @@ DEFAULT_CONFIG_DIR = Path.home() / ".claude"
 STATE_DIR = Path.home() / ".config" / "claude-usage-monitor"
 SAVED_ADDR_FILE = STATE_DIR / "ble-address"
 CONFIG_FILE = STATE_DIR / "config"
+# Last beat we wrote to the device — read by tools/clawdmeter_mcp.py.
+STATUS_FILE = STATE_DIR / "status.json"
 # Attention flag: a Claude Code hook writes an event type into this file when
 # Claude needs the user. The connected loop picks it up within one TICK and
 # forwards it as "n":"<type>" so the firmware plays the matching melody/view.
@@ -63,7 +65,10 @@ CONFIG_FILE = STATE_DIR / "config"
 # the daemon was down doesn't chime hours later.
 ATTN_FILE = STATE_DIR / "attention"
 ATTN_MAX_AGE = 60
-ATTN_TYPES = ("input", "perm", "done", "clear")
+# The firmware dispatches every type in this range, so the flag file may carry
+# any of them: the hooks write input/perm/done/clear, the calendar path builds
+# cal/calstart itself, and tools/clawdmeter_mcp.py can raise any of them.
+ATTN_TYPES = ("input", "perm", "done", "cal", "calstart", "clear")
 # Firmware context-line budget ("np" field): two wrapped lines, 48 chars.
 NP_MAX_CHARS = 48
 
@@ -386,6 +391,22 @@ class TokenExpired(Exception):
 
 def log(msg: str) -> None:
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
+
+
+def write_status(connected: bool, payload: dict | None) -> None:
+    """Publish what actually reached the device, for anything that asks.
+
+    tools/clawdmeter_mcp.py reports device state from this; without it the
+    only source is the log's prose, which is no contract at all. Best effort —
+    a status write must never take down the BLE loop.
+    """
+    try:
+        tmp = STATUS_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"ts": time.time(), "connected": connected,
+                                   "payload": payload}))
+        os.replace(tmp, STATUS_FILE)
+    except OSError as e:
+        log(f"Status write failed: {e}")
 
 
 class Credentials(NamedTuple):
@@ -1121,9 +1142,11 @@ class Session:
         log(f"Sending: {data.decode()}")
         try:
             await self.client.write_gatt_char(RX_CHAR_UUID, data, response=False)
+            write_status(True, payload)
             return True
         except BleakError as e:
             log(f"Write failed: {e}")
+            write_status(False, payload)
             return False
 
 

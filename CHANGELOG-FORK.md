@@ -34,12 +34,30 @@ macOS daemon.
 - The alert header shows the project name (the git-root basename), wrapped
   over up to two lines. Start typing on the Mac and the screen dismisses
   itself.
+- Each alert draws its creature at random from a small cast rather than
+  always the same one (never twice in a row), so the screen still reads as
+  a reaction when the same event fires all day: pointing, waving or the
+  magnifier when Claude is blocked on you; dancing, the trumpet or the
+  cloud when a turn finishes; the laptop when the limit is close.
 - False positives are filtered out: background tasks and parallel agents
   are verified for real — a shell task by the output file its shell holds
   open (lsof), an agent by whether it has reported back to its session
   (the harness's own completion notification), with transcript freshness
   bounding both so a killed one can't pin the session as busy. System
   notifications don't count as user input, autonomous sessions never ring.
+
+## Talking to the device from Claude
+
+- `tools/clawdmeter_mcp.py` — a dependency-free stdio MCP server, so an
+  assistant can put a line on the display itself: `show_message` (text +
+  alert style, with its caption, color and melody), `clear_message`, and
+  `device_status` (link state and the last usage payload). Register once
+  with `claude mcp add --scope user clawdmeter -- python3
+  tools/clawdmeter_mcp.py`.
+- No new transport: it writes the same flag file the hooks use, so the
+  daemon picks the message up within one TICK and the firmware treats it
+  exactly like a hook alert. `show_message` says so when the daemon is down
+  or the BLE link is missing, instead of pretending the message landed.
 
 ## Calendar
 
@@ -83,9 +101,11 @@ macOS daemon.
 
 - An active-session counter (heartbeat hooks) — "·N" in the corner and a
   "Resting" status with a frozen spinner when Claude is idle.
-- Splash animations follow the number of working sessions: 1–2 — work
-  animations, 3 — "dance sway dj", 4 — "dance bounce dj", 5+ — "dance
-  djmix" at double tempo.
+- Splash animations follow the number of working sessions, rotating within
+  the tier the workload calls for: 0 — resting (lurking, cloud, sailing),
+  1–2 — heads-down work (laptop, magnifier, pointing, crab walking), 3 —
+  picking up (basketball, skateboard, soccer), 4 — excited (jumping,
+  trumpet, waving), 5+ — dancing at double tempo.
 
 ## Misc
 
