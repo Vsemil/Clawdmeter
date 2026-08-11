@@ -83,9 +83,11 @@ macOS daemon.
 
 - An active-session counter (heartbeat hooks) — "·N" in the corner and a
   "Resting" status with a frozen spinner when Claude is idle.
-- Splash animations follow the number of working sessions: 1–2 — work
-  animations, 3 — "dance sway dj", 4 — "dance bounce dj", 5+ — "dance
-  djmix" at double tempo.
+- Splash animations follow the number of working sessions, rotating within
+  the tier the workload calls for: 0 — resting (lurking, cloud, sailing),
+  1–2 — heads-down work (laptop, magnifier, pointing, crab walking), 3 —
+  picking up (basketball, skateboard, soccer), 4 — excited (jumping,
+  trumpet, waving), 5+ — dancing at double tempo.
 
 ## Misc
 

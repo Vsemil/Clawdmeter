@@ -26,7 +26,8 @@ full details in [CHANGELOG-FORK.md](CHANGELOG-FORK.md):
   calendar) or the macOS system calendar via a tiny signed EventKit helper.
 - **Live activity indicator** — an active-session counter, a "Resting" state,
   and splash animations that escalate with the number of working sessions
-  (3 sessions → DJ Clawd, 5+ → full disco at double tempo).
+  (idle → Clawd lurking, heads-down work → Clawd at the laptop, 5+ →
+  dancing at double tempo).
 - **Better limit data** — usage comes from the read-only `/api/oauth/usage`
   endpoint (consumes nothing), a third gauge shows the model-scoped weekly
   limit (e.g. Fable), thresholds chime at 80/95%, and the reset countdown

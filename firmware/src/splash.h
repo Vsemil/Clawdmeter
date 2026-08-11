@@ -21,9 +21,9 @@ void splash_hide(void);
 // trigger a re-pick when the rate group changes mid-display.
 void splash_pick_for_current_rate(void);
 // Live host activity: <0 unknown (usage-rate picks stay), else the count of
-// working Claude sessions. 0 → Idle rotation, 1-2 → Work rotation, then fixed
-// DJ tracks: 3 → dance sway dj, 4 → dance bounce dj, 5+ → dance djmix at
-// double tempo.
+// working Claude sessions. When known it owns the rotation, escalating with
+// the workload through the ACT_NAMES tiers in splash.cpp — resting, work,
+// picking up, excited, and finally the dance floor at double tempo.
 void splash_set_activity(int working_sessions);
 
 // True when splash is currently rendering (used to gate re-picks).
