@@ -251,20 +251,56 @@ static uint32_t  attention_since  = 0;
 // Everything type-specific in one row (index = ATTN_* - 1): the waiting
 // states nag for 2 min, informational ones dismiss themselves quickly.
 // The caption/status texts live in strings.h so they follow the language.
+// Each alert draws its creature from a small cast rather than always the same
+// one — the screen stays alive when the same event fires all day. One member
+// per list is the animation the alert shipped with, so nothing lost its
+// character; the rest are chosen to read as the same beat.
+static const char* ANIM_INPUT[] = {           // blocked on you: get your eye
+    "idle look around", "pointing", "waving", "magnifier", "jumping happy" };
+static const char* ANIM_PERM[] = {            // inspecting something, waiting
+    "expression surprise", "magnifier", "lurking" };
+static const char* ANIM_DONE[] = {            // celebrate, then settle
+    "dance bounce", "dancing", "trumpet", "cloud" };
+static const char* ANIM_CAL[] = {             // heading out shortly
+    "dance sway", "walking", "waving" };
+static const char* ANIM_CAL_START[] = {       // it's happening now
+    "expression surprise", "cloud", "jumping happy" };
+static const char* ANIM_LIMIT[] = {           // heads-down, running out
+    "expression surprise", "laptop", "pointing" };
+static const char* ANIM_RESET[] = {           // the tank refilled
+    "expression wink", "trumpet", "jumping happy" };
+
 struct AttnStyle {
-    const char* anim;      // mini-creature animation
-    lv_color_t  color;     // caption color
+    const char* const* anims;   // mini-creature candidates, picked at random
+    uint8_t     anim_count;
+    lv_color_t  color;          // caption color
     uint32_t    timeout_ms;
 };
+#define ANIMS(a) (a), (uint8_t)(sizeof(a) / sizeof((a)[0]))
 static const AttnStyle ATTN_STYLES[ATTN_STYLED_COUNT] = {
-    { "idle look around",    COL_AMBER,  120000 },  // ATTN_INPUT
-    { "expression surprise", COL_AMBER,  120000 },  // ATTN_PERM
-    { "dance bounce",        COL_GREEN,  30000  },  // ATTN_DONE
-    { "dance sway",          COL_BLUE,   120000 },  // ATTN_CAL
-    { "expression surprise", COL_YELLOW, 120000 },  // ATTN_CAL_START
-    { "expression surprise", COL_RED,    30000  },  // ATTN_LIMIT
-    { "expression wink",     COL_GREEN,  30000  },  // ATTN_RESET
+    { ANIMS(ANIM_INPUT),     COL_AMBER,  120000 },  // ATTN_INPUT
+    { ANIMS(ANIM_PERM),      COL_AMBER,  120000 },  // ATTN_PERM
+    { ANIMS(ANIM_DONE),      COL_GREEN,  30000  },  // ATTN_DONE
+    { ANIMS(ANIM_CAL),       COL_BLUE,   120000 },  // ATTN_CAL
+    { ANIMS(ANIM_CAL_START), COL_YELLOW, 120000 },  // ATTN_CAL_START
+    { ANIMS(ANIM_LIMIT),     COL_RED,    30000  },  // ATTN_LIMIT
+    { ANIMS(ANIM_RESET),     COL_GREEN,  30000  },  // ATTN_RESET
 };
+
+// One of the current alert's animations, never the one already showing (a
+// repeat would look like the screen didn't react).
+static const char* attn_pick_anim(const AttnStyle& s) {
+    static const char* last = NULL;
+    static bool seeded = false;
+    if (!seeded) {          // seeded at the first alert, not at boot: millis()
+        srand(millis());    // is still near zero there and every run would
+        seeded = true;      // open with the same creature
+    }
+    if (s.anim_count == 1) return (last = s.anims[0]);
+    const char* pick = s.anims[rand() % s.anim_count];
+    if (pick == last) pick = s.anims[(rand() % (s.anim_count - 1) + 1) % s.anim_count];
+    return (last = pick);
+}
 static inline const AttnStyle& attn_style(void) { return ATTN_STYLES[attention_type - 1]; }
 static uint32_t  last_data_ms = 0;      // lv_tick when the last valid usage update landed
 static bool      data_received = false; // any valid update since boot
@@ -275,6 +311,8 @@ static const uint32_t DATA_FRESH_MS = 90000;  // usage counts as "live" within t
 // ---- Shared ----
 static lv_image_dsc_t logo_dsc;
 static screen_t current_screen = SCREEN_USAGE;
+// The idle view's resting pose, shared by the create and the hand-back paths.
+#define IDLE_ANIM "expression sleep"
 static bool     s_ble_connected = false;   // cached BLE connection state
 static uint32_t connected_at_ms = 0;       // when we last entered CONNECTED ("Connected" dwell)
 
@@ -476,12 +514,12 @@ static void build_idle_group(lv_obj_t* parent) {
     lv_obj_clear_flag(idle_group, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(idle_group, LV_OBJ_FLAG_EVENT_BUBBLE);
 
-    // A shrunk-down resting creature (the official cloud-ride animation)
-    // sits between the header and the status line; the animated "Listening…"
-    // status line carries the words, so no extra text is needed here.
-    // Ours keeps the handle: the attention screens swap this creature for the
-    // animation matching the event (splash_mini_set_anim).
-    mini_creature = splash_mini_create(idle_group, "cloud", L.idle_px);
+    // A shrunk-down sleeping creature sits between the header and the status
+    // line; the animated "Listening…" status line carries the words, so no
+    // extra text is needed here. Ours keeps the handle: the attention screens
+    // swap this creature for the animation matching the event, then hand it
+    // back (both ends name the pose through IDLE_ANIM so they can't drift).
+    mini_creature = splash_mini_create(idle_group, IDLE_ANIM, L.idle_px);
     if (mini_creature) lv_obj_align(mini_creature, LV_ALIGN_CENTER, 0, -20);
 
     lv_obj_add_flag(idle_group, LV_OBJ_FLAG_HIDDEN);  // update_view_state decides
@@ -821,6 +859,8 @@ static void attention_style_title(void) {
     }
 }
 
+static void apply_mascot_visibility(void);   // defined with its battery twin
+
 static void update_view_state(void) {
     if (!usage_group || !pair_group || !idle_group || !attention_group) return;
     int v;
@@ -836,19 +876,20 @@ static void update_view_state(void) {
         v = 1;  // idle / Zzz
     }
     if (v == view_state) return;
+    apply_mascot_visibility();
     // The mini creature is a singleton — hand it to whichever view needs it.
     // The "Лимиты" header title is irrelevant while the attention view is up
     // (its caption carries the message), so hide it for the duration.
     if (mini_creature) {
         if (v == 3) {
             lv_obj_set_parent(mini_creature, attention_group);
-            splash_mini_set_anim(attn_style().anim);
+            splash_mini_set_anim(attn_pick_anim(attn_style()));
             // -16 (not the idle view's -20): leaves room for two wrapped
             // context lines above without touching the caption below.
             lv_obj_align(mini_creature, LV_ALIGN_CENTER, 0, -16);
         } else if (view_state == 3) {
             lv_obj_set_parent(mini_creature, idle_group);
-            splash_mini_set_anim("expression sleep");
+            splash_mini_set_anim(IDLE_ANIM);
             lv_obj_align(mini_creature, LV_ALIGN_CENTER, 0, -20);
         }
     }
@@ -973,6 +1014,12 @@ static void apply_battery_visibility(void) {
     if (battery_lbl) lv_obj_set_flag(battery_lbl, LV_OBJ_FLAG_HIDDEN, hide);
 }
 
+// The mascot lives on the usage screen, and the attention view owns the whole
+// screen while it's up — he'd otherwise stroll across the message.
+static void apply_mascot_visibility(void) {
+    splash_mascot_set_visible(current_screen == SCREEN_USAGE && !attention_active);
+}
+
 static void global_click_cb(lv_event_t* e) {
     (void)e;
     if (attention_active) {   // first tap acknowledges the attention view
@@ -997,7 +1044,7 @@ void ui_show_attention(uint8_t type, const char* project) {
         lv_obj_set_style_text_color(lbl_attention, attn_style().color, 0);
     }
     if (was_active) {   // already on the view — update_view_state won't re-enter
-        if (mini_creature) splash_mini_set_anim(attn_style().anim);
+        if (mini_creature) splash_mini_set_anim(attn_pick_anim(attn_style()));
         attention_style_title();   // header project may differ between events too
     }
     attention_since = lv_tick_get();
@@ -1021,7 +1068,6 @@ void ui_show_screen(screen_t screen) {
     default: break;
     }
 
-    splash_mascot_set_visible(screen != SCREEN_SPLASH);
     if (logo_img) {
         if (screen == SCREEN_SPLASH) lv_obj_add_flag(logo_img, LV_OBJ_FLAG_HIDDEN);
         else                          lv_obj_clear_flag(logo_img, LV_OBJ_FLAG_HIDDEN);
@@ -1030,6 +1076,7 @@ void ui_show_screen(screen_t screen) {
     if (screen != SCREEN_SPLASH) prev_non_splash_screen = screen;
     current_screen = screen;
     apply_battery_visibility();
+    apply_mascot_visibility();
 }
 
 void ui_toggle_splash(void) {
