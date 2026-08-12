@@ -407,9 +407,24 @@ static const splash_anim_def_t* find_anim(const char* name) {
 // differ in size (the official art especially), so switching one for another
 // has to re-fit — rendering a bigger animation into the previous one's buffer
 // would run off the end of it.
+// The box is a height budget, not a square: frames differ far more in width
+// than in height (a trumpet is 50 cells wide against a creature's 24), and
+// fitting the longer side drew the same Clawd at 63 px in one animation and
+// 153 px in another. Width is only clamped so the widest art still fits the
+// panel, and the buffer is bounded so a wide frame can't eat the heap —
+// PSRAM-free boards keep the tighter cap.
+#define MINI_MARGIN 24
+#ifdef BOARD_HAS_PSRAM
+#define MINI_BUF_MAX (192 * 1024)
+#else
+#define MINI_BUF_MAX (48 * 1024)
+#endif
+
 static bool mini_fit(const splash_anim_def_t *a) {
-    const int amax = (a->w > a->h) ? a->w : a->h;
-    int cell = mini_px / amax;
+    const int widest = board_caps().width - 2 * MINI_MARGIN;
+    int cell = mini_px / a->h;
+    if (a->w * cell > widest) cell = widest / a->w;
+    while (cell > 1 && (size_t)a->w * cell * a->h * cell * 2 > MINI_BUF_MAX) cell--;
     if (cell < 1) cell = 1;
     const size_t need = (size_t)a->w * cell * a->h * cell * 2;
     if (need > mini_cap) {
