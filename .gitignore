@@ -5,6 +5,9 @@ firmware/.vscode/
 # OS
 .DS_Store
 
+# Editors
+.idea/
+
 # Claude Code
 .claude/
 
@@ -19,5 +22,6 @@ daemon/.venv/
 __pycache__/
 *.pyc
 
-# Собранный EventKit-хелпер (ad-hoc подпись локальная; сборка: daemon/build_calnext.sh)
+# The built EventKit helper (its ad-hoc signature is local to this machine;
+# build it with daemon/build_calnext.sh)
 daemon/calnext
