@@ -49,3 +49,6 @@ bool splash_mini_set_anim(const char *anim_name);
 lv_obj_t* splash_mascot_create(lv_obj_t *parent, int slot_x, int feet_y, int cell);
 void splash_mascot_tick(void);
 void splash_mascot_set_visible(bool v);
+// Start the next act immediately (the `mascot` serial command) — the acts are
+// otherwise minutes apart, which makes them hard to eyeball.
+void splash_mascot_act(void);

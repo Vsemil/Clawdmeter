@@ -217,6 +217,7 @@ static void check_serial_cmd() {
             // Step through the animation catalog (prints the name it lands
             // on) — the only way to eyeball one that no group/tier picks.
             else if (strcmp(cmd_buf, "anim") == 0)   splash_next();
+            else if (strcmp(cmd_buf, "mascot") == 0) splash_mascot_act();
             cmd_pos = 0;
         } else if (cmd_pos < CMD_BUF_SIZE - 1) {
             cmd_buf[cmd_pos++] = c;
