@@ -59,6 +59,13 @@ macOS daemon.
   exactly like a hook alert. `show_message` says so when the daemon is down
   or the BLE link is missing, instead of pretending the message landed.
 
+- The corner mascot on the usage screen plays the persona scenes too —
+  the magnifier while things are quiet, the laptop at a normal pace, then
+  basketball, soccer and the skateboard as the burn rate climbs. Its buffer
+  is measured from the act table instead of assuming the widest one, so the
+  cast can grow without overrunning it. `mascot` on the serial console
+  starts the next act immediately (they're otherwise 3.5–10 s apart).
+
 ## Calendar
 
 - Meeting reminders **15 and 5 minutes** ahead (configurable via

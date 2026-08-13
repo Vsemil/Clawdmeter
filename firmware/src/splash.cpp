@@ -513,10 +513,12 @@ static bool mas_from_loop = false;
 // walk-off / full-size-lurk / walk-back trip. Acts must fit the 28×21-cell
 // buffer (jumps are too tall for the corner).
 static const char* MAS_ACTS_BY_RATE[4][4] = {
-    { "pointing", "lurking", NULL,       NULL      },   // idle: sparse, sneaky
-    { "waving",   "lurking", "pointing", NULL      },   // normal
-    { "waving",   "dancing", "lurking",  NULL      },   // active
-    { "dancing",  "waving",  "dancing",  "lurking" },   // heavy: can't sit still
+    // Both sets play here: the claudepix characters are the quieter beats
+    // (a blink, a glance around), the official ones carry the big gestures.
+    { "pointing", "lurking", "idle look around", "magnifier" },   // idle: sparse, sneaky
+    { "waving",   "lurking", "laptop",    "expression wink"   },  // normal: heads down
+    { "waving",   "dancing", "basketball", "soccer"           },  // active
+    { "dancing",  "waving",  "skateboard", "lurking"          },  // heavy: can't sit still
 };
 static const uint16_t MAS_STILL_MS_BY_RATE[4] = { 10000, 7000, 5000, 3500 };
 
@@ -575,8 +577,25 @@ lv_obj_t* splash_mascot_create(lv_obj_t *parent, int slot_x, int feet_y, int cel
     mas_slot_x = slot_x;
     mas_feet_y = feet_y;
     mas_screen_w = board_caps().width;
-    // Buffer for the largest act bbox (pointing, 28×21 cells).
-    const size_t mas_bytes = (size_t)(28 * cell) * (21 * cell) * 3;
+    // Buffer for the largest act in the table, measured rather than assumed —
+    // the acts are named strings, and a bigger one added later would otherwise
+    // render straight past the end of this buffer.
+    int max_w = 0, max_h = 0;
+    for (int g = 0; g < 4; g++)
+        for (int s = 0; s < 4; s++) {
+            const splash_anim_def_t *act = MAS_ACTS_BY_RATE[g][s]
+                ? anim_by_name(MAS_ACTS_BY_RATE[g][s]) : NULL;
+            if (!act) continue;
+            if (act->w > max_w) max_w = act->w;
+            if (act->h > max_h) max_h = act->h;
+        }
+    const splash_anim_def_t *still = anim_by_name("walking");   // the still pose
+    if (still) {
+        if (still->w > max_w) max_w = still->w;
+        if (still->h > max_h) max_h = still->h;
+    }
+    if (!max_w || !max_h) return NULL;
+    const size_t mas_bytes = (size_t)(max_w * cell) * (max_h * cell) * 3;
     const splash_anim_def_t *lurk = anim_by_name("lurking");
     const BoardCaps& c = board_caps();
     int mind = (c.width < c.height) ? c.width : c.height;
@@ -612,6 +631,11 @@ void splash_mascot_set_visible(bool v) {
     }
 }
 
+// QA: start the next act now instead of waiting out the still interval, so a
+// screenshot can catch each one (the `mascot` serial command).
+static bool mas_act_now = false;
+void splash_mascot_act(void) { mas_act_now = true; }
+
 void splash_mascot_tick(void) {
     if (!mas_img || !mas_visible || !mas_anim) return;
     const uint32_t now = millis();
@@ -619,7 +643,8 @@ void splash_mascot_tick(void) {
     if (mas_mode == MAS_STILL) {
         int g = usage_rate_group();
         if (g < 0 || g > 3) g = 0;
-        if (now - mas_mode_started < MAS_STILL_MS_BY_RATE[g]) return;
+        if (!mas_act_now && now - mas_mode_started < MAS_STILL_MS_BY_RATE[g]) return;
+        mas_act_now = false;
         uint8_t count = 0;
         while (count < 4 && MAS_ACTS_BY_RATE[g][count]) count++;
         if (count == 0) { mas_mode_started = now; return; }
