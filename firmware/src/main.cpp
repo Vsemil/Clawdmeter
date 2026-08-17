@@ -128,6 +128,10 @@ static bool parse_json(const char* json, UsageData* out) {
                        !strcmp(n, "calstart") ? ATTN_CAL_START :
                        !strcmp(n, "clear")    ? ATTN_CLEAR     : ATTN_NONE;
     strlcpy(out->notify_project, doc["np"] | "", sizeof(out->notify_project));
+    // "ns" (who the event belongs to) is sent only when it differs from the
+    // context line — absent means the two are the same.
+    strlcpy(out->notify_scope, doc["ns"] | out->notify_project,
+            sizeof(out->notify_scope));
     out->active_sessions = doc["a"] | -1;
     const char* acct = doc["acct"] | "pro";
     out->enterprise = (strcmp(acct, "ent") == 0);
@@ -154,8 +158,7 @@ static void check_limit_thresholds(bool session_reset, float pct) {
     if (prev >= 0 && ((prev < 95 && s_now >= 95) ||
                       (prev < 80 && s_now >= 80 && s_now < 95))) {
         Serial.printf("session limit warning: %d%% -> %d%%\n", prev, s_now);
-        sound_hal_play_alert(ATTN_LIMIT);
-        ui_show_attention(ATTN_LIMIT, "");
+        if (ui_show_attention(ATTN_LIMIT, "")) sound_hal_play_alert(ATTN_LIMIT);
     }
     prev = s_now;
 }
@@ -429,13 +432,20 @@ void loop() {
             // Handled before the ok-check: a permission chime matters even
             // while the usage data itself is unavailable.
             if (usage.notify_type >= ATTN_INPUT && usage.notify_type <= ATTN_CAL_START) {
-                Serial.printf("attention request type %d (%s) — melody + view\n",
-                              usage.notify_type, usage.notify_project);
-                sound_hal_play_alert(usage.notify_type);
-                ui_show_attention(usage.notify_type, usage.notify_project);
+                // The view decides whether this event outranks what's already
+                // up; the melody follows that decision, so the screen and the
+                // sound never describe two different events.
+                bool shown = ui_show_attention(usage.notify_type,
+                                               usage.notify_project,
+                                               usage.notify_scope);
+                Serial.printf("attention request type %d (%s) — %s\n",
+                              usage.notify_type, usage.notify_project,
+                              shown ? "melody + view" : "outranked, dropped");
+                if (shown) sound_hal_play_alert(usage.notify_type);
             } else if (usage.notify_type == ATTN_CLEAR) {
-                Serial.println("attention clear — user is back at the keyboard");
-                ui_hide_attention();
+                Serial.printf("attention clear (%s) — user is back at the keyboard\n",
+                              usage.notify_scope[0] ? usage.notify_scope : "any");
+                ui_hide_attention(usage.notify_scope);
             }
             if (!usage.ok) {
                 // Error beat: the daemon can't fetch usage (expired token,
@@ -453,8 +463,10 @@ void loop() {
                 // serial cmd ignores it.
                 if (session_reset) {
                     Serial.println("session reset detected — wink");
-                    ui_show_attention(ATTN_RESET, "");
-                    if (usage.chime) sound_hal_play_reset();  // sound stays opt-in
+                    // Same rule as the hook events above: no wink on screen
+                    // (a blocked session outranks it), no chime either.
+                    if (ui_show_attention(ATTN_RESET, "") && usage.chime)
+                        sound_hal_play_reset();  // sound stays opt-in
                 }
                 if (g_after != g_before) {
                     Serial.printf("usage rate: group %d -> %d (s=%.2f%%)\n",

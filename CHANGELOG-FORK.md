@@ -39,6 +39,30 @@ macOS daemon.
   a reaction when the same event fires all day: pointing, waving or the
   magnifier when Claude is blocked on you; dancing, the trumpet or the
   cloud when a turn finishes; the laptop when the limit is close.
+- **Overlapping events keep their meaning.** Alerts used to share one flag
+  file and one screen slot, so anything landing inside the daemon's 5 s tick
+  overwrote what was already there — and the loser was gone for good. Three
+  changes remove that:
+  - the hooks and the MCP server drop one file per event into a spool; the
+    daemon forwards the most important one per beat and leaves the rest for
+    the following ticks (`ATTN_PRIORITY`: perm > input > calstart > cal >
+    done > clear; the firmware ranks the same order in its per-type table);
+  - `clear` is addressed. Typing in one session used to dismiss the
+    permission prompt another session was blocked on — and nothing raised it
+    again. It now carries the project it belongs to. Events with no project
+    of their own — an MCP message, a meeting reminder, the local limit
+    flashes — address themselves as "" and stay dismissable by anyone;
+  - the firmware separates **states** (INPUT/PERM — a session stays blocked
+    until it's answered) from **flashes** (done, limit, reset, calendar — a
+    moment that passed). A flash plays on top of a state and hands the screen
+    back when it expires, so "Done!" from one project can no longer swallow
+    another's prompt. A tap does the same, one alert at a time.
+  The melody now follows the same decision as the screen: `ui_show_attention`
+  reports whether the event won the slot, and the caller chimes only then —
+  the device can't show one event while playing another's.
+- The calendar competes on that ladder instead of standing aside whenever a
+  hook flag existed. "Meeting started" has a two-minute window and used to
+  lose it whole to an active session's chatter.
 - False positives are filtered out: background tasks and parallel agents
   are verified for real — a shell task by the output file its shell holds
   open (lsof), an agent by whether it has reported back to its session
@@ -54,7 +78,7 @@ macOS daemon.
   `device_status` (link state and the last usage payload). Register once
   with `claude mcp add --scope user clawdmeter -- python3
   tools/clawdmeter_mcp.py`.
-- No new transport: it writes the same flag file the hooks use, so the
+- No new transport: it writes into the same event spool the hooks use, so the
   daemon picks the message up within one TICK and the firmware treats it
   exactly like a hook alert. `show_message` says so when the daemon is down
   or the BLE link is missing, instead of pretending the message landed.

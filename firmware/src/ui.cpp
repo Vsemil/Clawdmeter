@@ -243,10 +243,18 @@ static lv_obj_t* attention_group;       // the "Claude is waiting for you" view
 static lv_obj_t* lbl_attention;         // its caption (text/color vary by type)
 static lv_obj_t* lbl_attn_ctx;          // event context line under the header
 static lv_obj_t* mini_creature;         // the single shared mini creature canvas
+// One alert, everything about it. Two slots: what's on screen, and a blocked
+// session parked under a passing flash (see AttnStyle::blocking) — parking and
+// restoring are then plain assignments rather than four strlcpy's apiece.
+struct AttnSlot {
+    uint8_t  type;         // ATTN_NONE in `held` = nothing parked
+    uint32_t since;        // lv_tick when it went up; survives a park
+    char     project[97];  // context line (mirrors UsageData::notify_project)
+    char     scope[97];    // who it belongs to, for `clear` matching
+};
 static bool      attention_active = false;
-static uint8_t   attention_type   = ATTN_INPUT;
-static char      attention_project[97] = "";   // context line while active (mirrors UsageData::notify_project)
-static uint32_t  attention_since  = 0;
+static AttnSlot  attn = { ATTN_INPUT, 0, "", "" };
+static AttnSlot  held = { ATTN_NONE, 0, "", "" };
 
 // Everything type-specific in one row (index = ATTN_* - 1): the waiting
 // states nag for 2 min, informational ones dismiss themselves quickly.
@@ -270,22 +278,38 @@ static const char* ANIM_LIMIT[] = {           // heads-down, running out
 static const char* ANIM_RESET[] = {           // the tank refilled
     "expression wink", "trumpet", "jumping happy" };
 
+// Alerts come in two kinds, and mixing them up is what made overlapping
+// events lose each other. INPUT/PERM are `blocking` STATES: a session is stuck
+// and stays stuck until it's answered. The rest are FLASHES: a moment that
+// passed. So a flash plays on top of a state and hands the screen back when it
+// expires — "Done!" from one project can no longer eat the permission prompt
+// another one is stuck on. `rank` decides between two alerts of the same kind.
+//
+// The daemon ranks the wire-carried types again in ATTN_PRIORITY
+// (claude_usage_daemon.py). Only the RELATIVE ORDER of those shared types is
+// the contract — the numbers are local, and each side also ranks types the
+// other never sees (LIMIT/RESET here, `clear` there).
 struct AttnStyle {
     const char* const* anims;   // mini-creature candidates, picked at random
     uint8_t     anim_count;
     lv_color_t  color;          // caption color
     uint32_t    timeout_ms;
+    uint8_t     rank;           // higher wins the screen
+    bool        blocking;       // true = a state that outlives a flash on top
 };
 #define ANIMS(a) (a), (uint8_t)(sizeof(a) / sizeof((a)[0]))
 static const AttnStyle ATTN_STYLES[ATTN_STYLED_COUNT] = {
-    { ANIMS(ANIM_INPUT),     COL_AMBER,  120000 },  // ATTN_INPUT
-    { ANIMS(ANIM_PERM),      COL_AMBER,  120000 },  // ATTN_PERM
-    { ANIMS(ANIM_DONE),      COL_GREEN,  30000  },  // ATTN_DONE
-    { ANIMS(ANIM_CAL),       COL_BLUE,   120000 },  // ATTN_CAL
-    { ANIMS(ANIM_CAL_START), COL_YELLOW, 120000 },  // ATTN_CAL_START
-    { ANIMS(ANIM_LIMIT),     COL_RED,    30000  },  // ATTN_LIMIT
-    { ANIMS(ANIM_RESET),     COL_GREEN,  30000  },  // ATTN_RESET
+    { ANIMS(ANIM_INPUT),     COL_AMBER,  120000, 5, true  },  // ATTN_INPUT
+    { ANIMS(ANIM_PERM),      COL_AMBER,  120000, 6, true  },  // ATTN_PERM
+    { ANIMS(ANIM_DONE),      COL_GREEN,  30000,  0, false },  // ATTN_DONE
+    { ANIMS(ANIM_CAL),       COL_BLUE,   120000, 3, false },  // ATTN_CAL
+    { ANIMS(ANIM_CAL_START), COL_YELLOW, 120000, 4, false },  // ATTN_CAL_START
+    { ANIMS(ANIM_LIMIT),     COL_RED,    30000,  2, false },  // ATTN_LIMIT
+    { ANIMS(ANIM_RESET),     COL_GREEN,  30000,  1, false },  // ATTN_RESET
 };
+static inline const AttnStyle& attn_style_of(uint8_t type) {
+    return ATTN_STYLES[type - 1];
+}
 
 // One of the current alert's animations, never the one already showing (a
 // repeat would look like the screen didn't react).
@@ -301,7 +325,16 @@ static const char* attn_pick_anim(const AttnStyle& s) {
     if (pick == last) pick = s.anims[(rand() % (s.anim_count - 1) + 1) % s.anim_count];
     return (last = pick);
 }
-static inline const AttnStyle& attn_style(void) { return ATTN_STYLES[attention_type - 1]; }
+static inline const AttnStyle& attn_style(void) { return attn_style_of(attn.type); }
+
+// A `clear` addresses one project: the user typing in session A must not
+// dismiss the prompt session B is blocked on. An empty name on either side
+// matches everything — the local LIMIT/RESET flashes carry none, an MCP
+// message addresses itself as "", and a pre-spool daemon sends `clear`
+// without one.
+static bool attn_scope_matches(const char* from, const char* slot) {
+    return !from || !from[0] || !slot[0] || strcmp(from, slot) == 0;
+}
 static uint32_t  last_data_ms = 0;      // lv_tick when the last valid usage update landed
 static bool      data_received = false; // any valid update since boot
 static bool      data_ok = true;        // last payload's ok flag; a {"ok":false} beat = "no fresh data"
@@ -851,8 +884,8 @@ lv_obj_set_style_text_font(lbl_session_pct, L.pct_font, 0);
 static void attention_style_title(void) {
     if (lbl_title) lv_obj_add_flag(lbl_title, LV_OBJ_FLAG_HIDDEN);
     if (!lbl_attn_ctx) return;
-    if (attention_project[0]) {
-        lv_label_set_text(lbl_attn_ctx, attention_project);
+    if (attn.project[0]) {
+        lv_label_set_text(lbl_attn_ctx, attn.project);
         lv_obj_clear_flag(lbl_attn_ctx, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(lbl_attn_ctx, LV_OBJ_FLAG_HIDDEN);
@@ -860,6 +893,7 @@ static void attention_style_title(void) {
 }
 
 static void apply_mascot_visibility(void);   // defined with its battery twin
+static bool restore_held_attention(void);    // defined with ui_show_attention
 
 static void update_view_state(void) {
     if (!usage_group || !pair_group || !idle_group || !attention_group) return;
@@ -867,6 +901,7 @@ static void update_view_state(void) {
     if (!s_ble_connected) {
         v = 0;  // pairing hint
         attention_active = false;   // stale without a live host
+        held.type = ATTN_NONE;
     } else if (attention_active) {
         v = 3;  // "Claude is waiting for you"
     } else if (data_received && data_ok &&
@@ -920,8 +955,12 @@ static void update_view_state(void) {
 void ui_tick_anim(void) {
     if (current_screen != SCREEN_USAGE) return;
     if (attention_active &&
-        lv_tick_get() - attention_since >= attn_style().timeout_ms) {
-        attention_active = false;   // nobody came — stop nagging
+        lv_tick_get() - attn.since >= attn_style().timeout_ms) {
+        // A flash that ran out gives the screen back to the state parked
+        // under it; a state that ran out takes the older parked one with it
+        // (nobody came — stop nagging).
+        if (attn_style().blocking) held.type = ATTN_NONE;
+        if (!restore_held_attention()) attention_active = false;
     }
     update_view_state();
     if (view_state == 1 || view_state == 3) splash_mini_tick();  // animate the mini creature
@@ -976,7 +1015,7 @@ void ui_tick_anim(void) {
     if (!s_ble_connected) {
         text = S->st_waiting;          // advertising / waiting for a host connection
     } else if (view_state == 3) {      // attention — spell out why the device chimed
-        text = S->attn_status[attention_type - 1];
+        text = S->attn_status[attn.type - 1];
     } else if (view_state == 1 && data_err[0]) {  // idle with a known cause — name it
         text = !strcmp(data_err, "auth")  ? S->err_auth :
                !strcmp(data_err, "token") ? S->err_token :
@@ -1023,7 +1062,9 @@ static void apply_mascot_visibility(void) {
 static void global_click_cb(lv_event_t* e) {
     (void)e;
     if (attention_active) {   // first tap acknowledges the attention view
-        attention_active = false;
+        // A tap on a flash reveals the blocked session waiting under it —
+        // the next tap dismisses that one too.
+        if (!restore_held_attention()) attention_active = false;
         update_view_state();
         return;
     }
@@ -1031,30 +1072,69 @@ static void global_click_cb(lv_event_t* e) {
     else                                  ui_show_screen(SCREEN_SPLASH);
 }
 
-void ui_show_attention(uint8_t type, const char* project) {
-    if (type < ATTN_INPUT || type > ATTN_RESET) return;
-    idle_note_activity();               // wake the panel if it faded out
-    // Re-style the view even if it's already up (a new event may differ).
-    bool was_active = attention_active;
-    attention_active = true;
-    attention_type   = type;
-    strlcpy(attention_project, project ? project : "", sizeof(attention_project));
+// Restamp caption/color for the current type; `on_screen` also swaps the
+// creature and the header project, which update_view_state() does by itself
+// only when the attention view is being entered.
+static void apply_attention_look(bool on_screen) {
     if (lbl_attention) {
-        lv_label_set_text(lbl_attention, S->attn_caption[attention_type - 1]);
+        lv_label_set_text(lbl_attention, S->attn_caption[attn.type - 1]);
         lv_obj_set_style_text_color(lbl_attention, attn_style().color, 0);
     }
-    if (was_active) {   // already on the view — update_view_state won't re-enter
+    if (on_screen) {
         if (mini_creature) splash_mini_set_anim(attn_pick_anim(attn_style()));
         attention_style_title();   // header project may differ between events too
     }
-    attention_since = lv_tick_get();
-    if (current_screen != SCREEN_USAGE) ui_show_screen(SCREEN_USAGE);
-    update_view_state();
 }
 
-void ui_hide_attention(void) {
+// Hand the screen back to a state parked under a flash, unless it aged out
+// meanwhile. It keeps its original timestamp — a blocked session nags for its
+// own two minutes and isn't renewed by every flash that passes over it.
+static bool restore_held_attention(void) {
+    if (held.type == ATTN_NONE) return false;
+    AttnSlot parked = held;
+    held.type = ATTN_NONE;
+    if (lv_tick_get() - parked.since >= attn_style_of(parked.type).timeout_ms)
+        return false;
+    attn = parked;
+    attention_active = true;
+    apply_attention_look(true);
+    return true;
+}
+
+bool ui_show_attention(uint8_t type, const char* project, const char* scope) {
+    if (type < ATTN_INPUT || type > ATTN_RESET) return false;
+    bool was_active = attention_active;
+    if (was_active) {
+        if (attn_style().blocking && !attn_style_of(type).blocking) {
+            // A flash over a blocked session: park the state and let the
+            // flash play — ui_tick_anim() gives the screen back afterwards.
+            held = attn;
+        } else if (attn_style_of(type).rank < attn_style().rank) {
+            // Same kind, less important: "Done!" doesn't interrupt a limit
+            // warning, and a second blocked session doesn't restyle the
+            // screen that is already asking for the user. Only one state fits
+            // here, so the weaker one is dropped rather than queued — the
+            // screen is calling for a human either way.
+            return false;
+        }
+    }
+    idle_note_activity();               // wake the panel if it faded out
+    attention_active = true;
+    attn.type  = type;
+    attn.since = lv_tick_get();
+    strlcpy(attn.project, project ? project : "", sizeof(attn.project));
+    strlcpy(attn.scope, scope ? scope : attn.project, sizeof(attn.scope));
+    apply_attention_look(was_active);
+    if (current_screen != SCREEN_USAGE) ui_show_screen(SCREEN_USAGE);
+    update_view_state();
+    return true;
+}
+
+void ui_hide_attention(const char* scope) {
+    if (attn_scope_matches(scope, held.scope)) held.type = ATTN_NONE;
     if (!attention_active) return;
-    attention_active = false;
+    if (!attn_scope_matches(scope, attn.scope)) return;
+    if (!restore_held_attention()) attention_active = false;
     update_view_state();
 }
 
@@ -1115,7 +1195,7 @@ void ui_set_lang(const char* lang) {
     if (lbl_weekly_label) lv_label_set_text(lbl_weekly_label, S->pill_weekly);
     if (lbl_spending_desc) lv_label_set_text(lbl_spending_desc, S->of_monthly_budget);
     if (attention_active && lbl_attention)
-        lv_label_set_text(lbl_attention, S->attn_caption[attention_type - 1]);
+        lv_label_set_text(lbl_attention, S->attn_caption[attn.type - 1]);
     // Header: skip while the attention view owns it or the clock ticks in it.
     if (lbl_title && view_state != 3 && clock_base_epoch == 0)
         lv_label_set_text(lbl_title, S->title);

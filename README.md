@@ -24,11 +24,16 @@ full details in [CHANGELOG-FORK.md](CHANGELOG-FORK.md):
   reported back to its session. Each alert draws its creature at random from
   a small cast, so the screen still reads as a reaction when the same event
   fires all day.
+- **Overlapping alerts keep their meaning** — several sessions ring at once
+  and nothing is lost: events queue instead of overwriting each other, a
+  blocked session outranks a finished turn, and a passing "Done!" plays over
+  a permission prompt and hands the screen back to it. Coming back to the
+  keyboard dismisses that project's alert, not another session's.
 - **Claude can write to the display** — `tools/clawdmeter_mcp.py` is a
   dependency-free MCP server: `show_message` puts a line on the device with
   the alert style of your choice, `clear_message` dismisses it, and
-  `device_status` reports the link and the last payload. It writes the same
-  flag file the hooks use, so nothing new is paired or flashed.
+  `device_status` reports the link and the last payload. It writes into the
+  same event spool the hooks use, so nothing new is paired or flashed.
 - **Meeting reminders** — 15 and 5 minutes before a meeting, plus a separate
   "meeting started" alert. Sources: any ICS feed (published Outlook/Google
   calendar) or the macOS system calendar via a tiny signed EventKit helper.
