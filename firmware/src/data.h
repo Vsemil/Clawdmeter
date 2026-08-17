@@ -35,6 +35,10 @@ struct UsageData {
     char notify_project[97]; // event context line: git root basename, or
                              // "HH:MM title" for ATTN_CAL. 48 chars ≈ 96
                              // UTF-8 bytes when Cyrillic.
+    char notify_scope[97];   // who the event belongs to, for matching a later
+                             // ATTN_CLEAR ("ns"; defaults to notify_project).
+                             // An MCP message shows free text but addresses
+                             // itself as "" — any clear dismisses it.
     int active_sessions;     // Claude Code sessions working right now; -1 = daemon doesn't report
     bool enterprise;         // true = Enterprise spending-limit account
     int time_pct;            // 0-100: fraction of billing period elapsed (Enterprise)

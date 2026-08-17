@@ -56,19 +56,46 @@ SAVED_ADDR_FILE = STATE_DIR / "ble-address"
 CONFIG_FILE = STATE_DIR / "config"
 # Last beat we wrote to the device — read by tools/clawdmeter_mcp.py.
 STATUS_FILE = STATE_DIR / "status.json"
-# Attention flag: a Claude Code hook writes an event type into this file when
-# Claude needs the user. The connected loop picks it up within one TICK and
-# forwards it as "n":"<type>" so the firmware plays the matching melody/view.
-# Types: input (waiting for an answer), perm (permission prompt), done (turn
-# finished), clear (user is back — dismiss the attention view, no sound).
-# Stale flags (older than ATTN_MAX_AGE) are discarded so a flag written while
+# Attention spool: a Claude Code hook drops one file per event here when
+# Claude needs the user. The connected loop picks them up within one TICK and
+# forwards the most important one as "n":"<type>" so the firmware plays the
+# matching melody/view; the rest wait for the following ticks.
+#
+# THE SPOOL ENTRY FORMAT lives here — the two producers can't import it
+# (tools/claude-attention-hook.sh is bash; tools/clawdmeter_mcp.py must start
+# under any python, without the daemon's venv), so this is the canonical copy
+# they point at:
+#   line 1  event type — see ATTN_PRIORITY for the full set
+#   line 2  the context line shown on the device ("np"): a project name, or
+#           "HH:MM title" for a meeting, or an MCP message's own text
+#   line 3  optional address the event is dismissed by, when it differs from
+#           line 2 (an MCP message shows text but has no project, so it
+#           addresses itself as "" and any `clear` dismisses it)
+# The file name only has to be unique — events are ordered by priority and
+# mtime, never by name.
+#
+# Stale files (older than ATTN_MAX_AGE) are discarded so an event written while
 # the daemon was down doesn't chime hours later.
+ATTN_SPOOL = STATE_DIR / "attention.d"
+# The pre-spool single slot. Still read (a hook or an MCP copy from an older
+# checkout keeps writing it until that Claude Code session restarts), never
+# written. Drop it once no such session can plausibly be alive.
 ATTN_FILE = STATE_DIR / "attention"
 ATTN_MAX_AGE = 60
-# The firmware dispatches every type in this range, so the flag file may carry
-# any of them: the hooks write input/perm/done/clear, the calendar path builds
-# cal/calstart itself, and tools/clawdmeter_mcp.py can raise any of them.
-ATTN_TYPES = ("input", "perm", "done", "cal", "calstart", "clear")
+# Who wins when several land inside one TICK — and, being the full set of
+# types, what an event is validated against. Blocking states outrank
+# time-bound reminders, which outrank the celebratory ones — a permission
+# prompt matters more than a finished turn, and a meeting that already started
+# has a two-minute window while "done" can wait five seconds. `clear` sits at
+# the bottom: it dismisses, so nothing is lost by letting alerts go first.
+#
+# The firmware ranks the same events again in attn_rank() (ui.cpp) — two
+# processes, two languages, no shared artifact. Only the RELATIVE ORDER of the
+# types that cross the wire is the contract; the numbers themselves are local
+# (each side also ranks types the other never sees: `clear` here, LIMIT/RESET
+# there).
+ATTN_PRIORITY = {"perm": 6, "input": 5, "calstart": 4, "cal": 3,
+                 "done": 1, "clear": 0}
 # Firmware context-line budget ("np" field): two wrapped lines, 48 chars.
 NP_MAX_CHARS = 48
 
@@ -106,26 +133,77 @@ def read_config() -> dict[str, str]:
     return opts
 
 
-def read_attention_flag() -> tuple[str | None, str]:
-    """Consume the hook's attention flag → (type, project), or (None, "").
+class AttnEvent(NamedTuple):
+    kind: str            # one of ATTN_PRIORITY's keys
+    project: str         # context line for the device ("np")
+    ts: float            # when the hook wrote it
+    scope: str = ""      # what a later `clear` is matched against; the hooks
+                         # leave it equal to the project (see the spool format)
+    # How the event retires once it's on the device: spool files to unlink, or
+    # a calendar (start, threshold) key to mark sent. Locally-raised events
+    # carry their own retirement instead of the loop special-casing them.
+    paths: tuple[Path, ...] = ()
+    cal_key: tuple[float, int] | None = None
 
-    Stale flags (older than ATTN_MAX_AGE) are discarded so a flag written
-    while the daemon was down doesn't chime hours later.
+
+def _attn_order(e: AttnEvent) -> tuple[int, float]:
+    """Sort key: most important first, oldest first within a priority."""
+    return (-ATTN_PRIORITY.get(e.kind, 0), e.ts)
+
+
+def read_attention_spool() -> list[AttnEvent]:
+    """Everything the hooks/MCP dropped, in no particular order.
+
+    One file per event instead of one shared slot: two events inside a single
+    TICK used to overwrite each other, and the loser was gone for good — a
+    permission prompt whose flag a `clear` from another session ate never came
+    back, leaving that session blocked with the device silent.
+
+    Stale files (older than ATTN_MAX_AGE) are dropped here; the caller retires
+    only the event it actually delivered, so the rest ride the next tick.
     """
-    if not ATTN_FILE.exists():
-        return None, ""
-    try:
-        fresh = (time.time() - ATTN_FILE.stat().st_mtime) <= ATTN_MAX_AGE
-        lines = ATTN_FILE.read_text().splitlines()
-        ATTN_FILE.unlink(missing_ok=True)
-        if fresh and lines:
-            kind = lines[0].strip().lower()
-            kind = kind if kind in ATTN_TYPES else "input"
-            project = lines[1].strip()[:NP_MAX_CHARS] if len(lines) > 1 else ""
-            return kind, project
-    except OSError:
-        pass
-    return None, ""
+    now = time.time()
+    files = list(ATTN_SPOOL.glob("[!.]*")) if ATTN_SPOOL.is_dir() else []
+    if ATTN_FILE.exists():
+        files.append(ATTN_FILE)
+    events: dict[tuple[str, str, str], AttnEvent] = {}
+    for path in files:
+        try:
+            ts = path.stat().st_mtime
+        except OSError:
+            continue
+        if now - ts > ATTN_MAX_AGE:
+            # A day disconnected leaves a spool full of corpses — recognise
+            # them by their stat alone, before spending a read on each.
+            path.unlink(missing_ok=True)
+            continue
+        try:
+            lines = path.read_text().splitlines()
+        except OSError:
+            continue
+        if not lines:
+            path.unlink(missing_ok=True)
+            continue
+        kind = lines[0].strip().lower()
+        kind = kind if kind in ATTN_PRIORITY else "input"
+        project = lines[1].strip()[:NP_MAX_CHARS] if len(lines) > 1 else ""
+        # No line 3 means the context line doubles as the address.
+        scope = lines[2].strip()[:NP_MAX_CHARS] if len(lines) > 2 else project
+        # The same event twice (a retried tool, two agents in one repo) is one
+        # alert with two files — both have to go when it's delivered.
+        prev = events.get((kind, project, scope))
+        events[(kind, project, scope)] = AttnEvent(
+            kind, project, max(ts, prev.ts) if prev else ts, scope,
+            (prev.paths if prev else ()) + (path,))
+    return list(events.values())
+
+
+def retire_attention(ev: AttnEvent) -> None:
+    """The event reached the device — drop its spool files / mark it sent."""
+    for path in ev.paths:
+        path.unlink(missing_ok=True)
+    if ev.cal_key:
+        _cal_sent.add(ev.cal_key)
 
 
 # ── Calendar reminders ──────────────────────────────────────────────────────
@@ -793,7 +871,12 @@ def _http() -> httpx.AsyncClient:
     minute; a fresh TLS handshake per poll would be pure waste."""
     global _HTTP
     if _HTTP is None:
-        _HTTP = httpx.AsyncClient(timeout=20.0)
+        # A short connect budget: when the host is unreachable both pollers run
+        # in turn, so a 20 s connect timeout stalled the whole loop for 40 s —
+        # long enough for alerts queued behind it to feel late. Reading a
+        # response that has already started may legitimately take longer.
+        _HTTP = httpx.AsyncClient(
+            timeout=httpx.Timeout(20.0, connect=6.0))
     return _HTTP
 
 
@@ -803,6 +886,8 @@ async def poll_api(token: str) -> dict | str:
     the headers describe, e.g. Enterprise overage). Returns the payload, or an
     error code string when both sources failed."""
     result = await _poll_usage_endpoint(token)
+    if result == "net":
+        return result   # same host, same outcome — don't buy a second timeout
     if isinstance(result, str):
         result = await _poll_probe(token)   # the probe's verdict is fresher
     if isinstance(result, str):
@@ -825,7 +910,9 @@ async def _poll_usage_endpoint(token: str) -> dict | str:
     try:
         resp = await _http().get(USAGE_URL, headers=headers)
     except httpx.HTTPError as e:
-        log(f"Usage endpoint failed: {e}")
+        # httpx often raises with an empty message (a bare ConnectTimeout), so
+        # the class name is the only thing that says what actually broke.
+        log(f"Usage endpoint failed: {type(e).__name__}: {e}")
         return "net"
     if resp.status_code != 200:
         log(f"Usage endpoint HTTP {resp.status_code}: {resp.text[:200]}")
@@ -911,7 +998,7 @@ async def _poll_probe(token: str) -> dict | str:
     try:
         resp = await _http().post(API_URL, headers=headers, json=API_BODY)
     except httpx.HTTPError as e:
-        log(f"API call failed: {e}")
+        log(f"API call failed: {type(e).__name__}: {e}")
         return "net"
     if resp.status_code >= 400:
         log(f"API HTTP {resp.status_code}: {resp.text[:200]}")
@@ -1291,56 +1378,76 @@ async def connect_and_run(target, stop_event: asyncio.Event) -> bool:
                     log("Credentials changed — retrying now")
                     stale_creds, poll_interval = None, POLL_INTERVAL
                     session.refresh_requested.set()
-            attn, attn_project = read_attention_flag()
+            events = read_attention_spool()
             cal_url, cal_thresholds = read_cal_config()
-            cal = None
-            if not attn and cal_url:
-                # Hook events outrank the calendar; an unsent reminder just
-                # waits for the next TICK (nothing is marked sent yet).
+            if cal_url:
+                # The calendar competes on the same ladder as the hooks now.
+                # It used to be skipped outright whenever a hook flag was
+                # present, and "the meeting started" — a two-minute window —
+                # is exactly the event an active session talks over.
                 refresh_cal_events(cal_url)
                 cal = check_cal_reminder(cal_thresholds)
-            if attn == "clear":
-                # Dismiss-only: reuse the last payload, skip the API poll.
-                if last_payload is not None:
-                    log("Attention clear — dismissing the attention view")
-                    a = await asyncio.to_thread(count_active_sessions)
-                    await session.write_payload({**last_payload, "n": "clear",
-                                                 "a": a})
-            elif (session.refresh_requested.is_set() or elapsed >= poll_interval
-                  or attn or cal):
-                session.refresh_requested.clear()
-                payload = await poll_active_payload()
-                if payload.get("ok"):
-                    last_payload = dict(payload)
-                    poll_interval = POLL_INTERVAL
-                    stale_creds = None
+                if cal:
+                    # Addressed as "" — coming back to the keyboard anywhere
+                    # dismisses a meeting reminder; no project owns it.
+                    events.append(AttnEvent(
+                        "calstart" if cal[2] == 0 else "cal", cal[0], now,
+                        cal_key=(cal[1], cal[2])))
+            # One event per beat, the rest keep their place in the spool.
+            ev = min(events, key=_attn_order) if events else None
+            due = session.refresh_requested.is_set() or elapsed >= poll_interval
+            if due or ev:
+                # An alert doesn't need fresh numbers — it needs to ring NOW.
+                # Polling for it costs a round trip, and when the API is
+                # unreachable that round trip is two connect timeouts: the
+                # event sat ~40 s behind a poll that was going to fail anyway,
+                # and the screen flashed "No network" between alerts.
+                polled = due or last_payload is None
+                if polled:
+                    session.refresh_requested.clear()
+                    # The census forks lsof and scans transcripts — independent
+                    # of the poll, so pay for them at the same time.
+                    payload, sessions = await asyncio.gather(
+                        poll_active_payload(),
+                        asyncio.to_thread(count_active_sessions))
+                    payload["a"] = sessions
+                    if payload.get("ok"):
+                        last_payload = dict(payload)
+                        poll_interval = POLL_INTERVAL
+                        stale_creds = None
+                    else:
+                        # Exponential backoff: a dead token means every retry is
+                        # a guaranteed 401, and repeated auth failures escalate
+                        # to 429s — don't hammer the API while there's nothing
+                        # to win. The wait is cut short as soon as the
+                        # credentials change.
+                        poll_interval = min(poll_interval * 2, 600)
+                        if payload.get("err") in ("auth", "token"):
+                            stale_creds = _last_fingerprint   # what the poll read
+                        log(f"Poll failed ({payload.get('err')}); next attempt in {poll_interval}s")
                 else:
-                    # Exponential backoff: a dead token means every retry is a
-                    # guaranteed 401, and repeated auth failures escalate to
-                    # 429s — don't hammer the API while there's nothing to win.
-                    # The wait is cut short as soon as the credentials change.
-                    poll_interval = min(poll_interval * 2, 600)
-                    if payload.get("err") in ("auth", "token"):
-                        stale_creds = _last_fingerprint   # what the poll read
-                    log(f"Poll failed ({payload.get('err')}); next attempt in {poll_interval}s")
-                # lsof inside can take a while — keep the BLE loop responsive.
-                payload["a"] = await asyncio.to_thread(count_active_sessions)
-                if attn:
+                    # Alert-only beat: the last poll's numbers and its session
+                    # count both ride along. Re-running the census here would
+                    # put an lsof fork in front of the chime.
+                    payload = dict(last_payload)
+                if ev:
                     # Attention events ride on error beats too — a permission
                     # chime matters even while the usage data is unavailable.
-                    payload["n"] = attn
-                    if attn_project:
-                        payload["np"] = attn_project
-                    log(f"Attention flag ({attn}, {attn_project or '?'}) — forwarding to device")
-                elif cal:
-                    payload["n"] = "calstart" if cal[2] == 0 else "cal"
-                    payload["np"] = cal[0]
-                    log(f"Calendar reminder — {cal[0]} "
-                        f"({'началась' if cal[2] == 0 else f'{cal[2]}′'})")
+                    payload["n"] = ev.kind
+                    if ev.project:
+                        payload["np"] = ev.project
+                    if ev.scope != ev.project:
+                        payload["ns"] = ev.scope   # addressed as something else
+                    queued = len(events) - 1
+                    log(f"Attention ({ev.kind}, {ev.project or '?'}) — forwarding"
+                        f"{f'; {queued} queued' if queued else ''}")
                 if await session.write_payload(payload):
-                    last_poll = time.time()
-                    if cal:
-                        _cal_sent.add((cal[1], cal[2]))
+                    if polled:
+                        last_poll = time.time()   # an alert doesn't reset the clock
+                    # An event retires only once it's on the device — a failed
+                    # write leaves it in the spool for the next tick.
+                    if ev is not None:
+                        retire_attention(ev)
                     if payload.get("ok"):
                         used_successfully = True
 

@@ -55,14 +55,7 @@ def test_daemons_have_no_refresh_path():
 
 # --- behavior: a dead token yields a {"ok": false} no-data beat, no refresh --
 
-def _connected_client():
-    client = AsyncMock()
-    client.connect = AsyncMock(return_value=None)
-    client.is_connected = True
-    client.disconnect = AsyncMock()
-    client.start_notify = AsyncMock()
-    client.write_gatt_char = AsyncMock(return_value=None)
-    return client
+from daemon.tests.conftest import connected_client as _connected_client
 
 
 def test_freeride_autherror_emits_no_data_beat():

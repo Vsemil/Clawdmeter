@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """MCP server: let Claude Code put a message on the Clawdmeter itself.
 
-The BLE daemon already watches a flag file for the hook-driven alerts
-(tools/claude-attention-hook.sh writes it; the daemon forwards it as the
-"n"/"np" payload fields within one TICK). This server writes the same file,
-so an assistant can raise the device's alert screen — chime, creature and
-all — with no new firmware, transport or pairing involved.
+The BLE daemon already watches an event spool for the hook-driven alerts
+(tools/claude-attention-hook.sh writes it; the daemon forwards the most
+important one as the "n"/"np" payload fields within one TICK). This server
+drops events into the same spool, so an assistant can raise the device's alert
+screen — chime, creature and all — with no new firmware, transport or pairing
+involved.
 
 Stdio JSON-RPC, newline-delimited, no third-party imports: it has to start
 under any Python the user has, in any project, without a venv.
@@ -25,13 +26,13 @@ from pathlib import Path
 # option (it pulls in bleak/httpx from the daemon's venv) and this server has
 # to start under any python.
 STATE_DIR = Path.home() / ".config" / "claude-usage-monitor"
-ATTN_FILE = STATE_DIR / "attention"
+ATTN_SPOOL = STATE_DIR / "attention.d"
 STATUS_FILE = STATE_DIR / "status.json"
 # Firmware context-line budget ("np"): two wrapped lines on the alert screen.
 NP_MAX_CHARS = 48
 # A status beat older than this means the daemon stopped writing it.
 STATUS_STALE_S = 180
-# The daemon only forwards these (its ATTN_TYPES); each carries its own
+# The daemon only forwards these (its ATTN_PRIORITY); each carries its own
 # caption, color and melody on the device — the caption is fixed and follows
 # the device's language, so describe the styles by role, not by quoting it.
 STYLES = {
@@ -88,12 +89,20 @@ TOOLS = [
 
 
 def write_flag(kind: str, text: str = "") -> None:
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
-    # Line 1 = event type, line 2 = the context line. Written whole so the
-    # daemon never reads a half-written flag.
-    tmp = ATTN_FILE.with_suffix(".tmp")
-    tmp.write_text(f"{kind}\n{text}\n")
-    os.replace(tmp, ATTN_FILE)
+    """Drop one event into the daemon's spool (entry format documented there).
+
+    One file per event, so a hook firing in the same tick can't overwrite this
+    message and vice versa; written aside and renamed in, so the daemon never
+    reads a half-written event. Line 3 is the address a later `clear` is
+    matched against — a message shows free text and has no project of its own,
+    so it addresses itself as "" and anyone's `clear`, the user typing
+    included, dismisses it.
+    """
+    ATTN_SPOOL.mkdir(parents=True, exist_ok=True)
+    tmp = ATTN_SPOOL / f".tmp.{os.getpid()}"
+    tmp.write_text(f"{kind}\n{text}\n\n")
+    # Any unique name will do — the daemon orders events by priority and mtime.
+    os.replace(tmp, ATTN_SPOOL / f"{time.time():.6f}-{os.getpid()}-{kind}")
 
 
 def daemon_state() -> dict:
