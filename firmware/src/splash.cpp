@@ -7,6 +7,7 @@
 #include "hal/display_hal.h"
 #include <Arduino.h>
 #include <string.h>
+#include <stdlib.h>
 #include <esp_heap_caps.h>
 
 // 60×60 stage. CELL sized so the canvas fits the smaller display dimension —
@@ -505,7 +506,9 @@ static uint32_t mas_frame_started = 0;
 static uint32_t mas_mode_started = 0;
 static int  mas_x = 0;                 // widget x, px (may be off-screen)
 static int  mas_face = +1;
-static uint8_t mas_act_idx = 0;
+static uint8_t mas_last_act = 0xFF;    // never repeat this one back-to-back
+static uint8_t mas_plays_left = 0;     // replays queued for a short act
+static uint8_t mas_still_jitter = 0;   // % added to the current pause
 static bool mas_from_loop = false;
 
 // The corner mascot mirrors the splash's excitement: per usage-rate group,
@@ -520,12 +523,51 @@ static const char* MAS_ACTS_BY_RATE[4][4] = {
     { "waving",   "dancing", "basketball", "soccer"           },  // active
     { "dancing",  "waving",  "skateboard", "lurking"          },  // heavy: can't sit still
 };
-static const uint16_t MAS_STILL_MS_BY_RATE[4] = { 10000, 7000, 5000, 3500 };
+// He is a desk ornament, not a screensaver: the corner should be STILL most
+// of the time, so the pause dwarfs the act (2.5-9.5 s) at every rate but the
+// heaviest.
+static const uint16_t MAS_STILL_MS_BY_RATE[4] = { 30000, 22000, 15000, 9000 };
+// Rolled fresh for each pause so the corner doesn't tick like a metronome.
+static const uint8_t  MAS_STILL_JITTER_PCT = 60;
+// A wave is 830 ms — over before you finish glancing at it. Acts under this
+// replay until they add up to about it; the longer ones play once.
+static const uint32_t MAS_ACT_MIN_MS = 2000;
+static const uint8_t  MAS_ACT_MAX_PLAYS = 4;
 
 static const splash_anim_def_t* anim_by_name(const char *n) {
     for (int i = 0; i < SPLASH_ANIM_COUNT; i++)
         if (strcmp(splash_anims[i].name, n) == 0) return &splash_anims[i];
     return NULL;
+}
+
+static uint32_t anim_duration_ms(const splash_anim_def_t *a) {
+    uint32_t ms = 0;
+    for (uint16_t i = 0; i < a->frame_count; i++) ms += a->holds[i];
+    return ms;
+}
+
+// How many times to play one act back-to-back so it reads as a beat.
+static uint8_t mas_plays_for(const splash_anim_def_t *a) {
+    const uint32_t dur = anim_duration_ms(a);
+    if (!dur || dur >= MAS_ACT_MIN_MS) return 1;
+    const uint32_t n = (MAS_ACT_MIN_MS + dur - 1) / dur;
+    return (uint8_t)(n > MAS_ACT_MAX_PLAYS ? MAS_ACT_MAX_PLAYS : n);
+}
+
+// Random rather than round-robin: a fixed rotation reads as a loop once
+// you've watched the corner for a few minutes. Never the act that just
+// played — an immediate repeat looks like the mascot got stuck.
+static uint8_t mas_pick_act(uint8_t count) {
+    static bool seeded = false;
+    if (!seeded) {          // seeded at the first act, not in create(): there
+        srand(millis());    // millis() is still near zero and every run would
+        seeded = true;      // open on the same one
+    }
+    if (count <= 1) return (mas_last_act = 0);
+    uint8_t pick = (uint8_t)(rand() % count);
+    if (pick == mas_last_act)                       // shift to any other index
+        pick = (uint8_t)((pick + 1 + rand() % (count - 1)) % count);
+    return (mas_last_act = pick);
 }
 
 // Render one frame into a planar RGB565A8 image (alpha 0 outside the art) and
@@ -565,6 +607,8 @@ static void mas_show_still(void) {
     mas_frame = 0;
     mas_mode = MAS_STILL;
     mas_mode_started = millis();
+    mas_plays_left = 0;
+    mas_still_jitter = (uint8_t)(rand() % (MAS_STILL_JITTER_PCT + 1));
     mas_x = mas_slot_x;
     mas_face = +1;
     if (mas_anim)
@@ -643,12 +687,14 @@ void splash_mascot_tick(void) {
     if (mas_mode == MAS_STILL) {
         int g = usage_rate_group();
         if (g < 0 || g > 3) g = 0;
-        if (!mas_act_now && now - mas_mode_started < MAS_STILL_MS_BY_RATE[g]) return;
+        const uint32_t base = MAS_STILL_MS_BY_RATE[g];
+        const uint32_t pause = base + base * mas_still_jitter / 100;
+        if (!mas_act_now && now - mas_mode_started < pause) return;
         mas_act_now = false;
         uint8_t count = 0;
         while (count < 4 && MAS_ACTS_BY_RATE[g][count]) count++;
         if (count == 0) { mas_mode_started = now; return; }
-        const char *act = MAS_ACTS_BY_RATE[g][mas_act_idx++ % count];
+        const char *act = MAS_ACTS_BY_RATE[g][mas_pick_act(count)];
         mas_frame = 0;
         mas_frame_started = now;
         mas_from_loop = false;
@@ -656,12 +702,14 @@ void splash_mascot_tick(void) {
             mas_anim = anim_by_name("walking");
             mas_face = -1;
             mas_mode = MAS_WALK_OFF;
+            mas_plays_left = 0;
         } else {
             const splash_anim_def_t *a = anim_by_name(act);
             if (!a) { mas_mode_started = now; return; }
             mas_anim = a;
             mas_face = +1;
             mas_mode = MAS_ACT;
+            mas_plays_left = mas_plays_for(a) - 1;
         }
         return;
     }
@@ -685,6 +733,14 @@ void splash_mascot_tick(void) {
             mas_x = mas_screen_w;                   // so he re-enters from it
             mas_mode = MAS_WALK_IN;
             lv_obj_clear_flag(mas_img, LV_OBJ_FLAG_HIDDEN);
+            return;
+        }
+        if (mas_mode == MAS_ACT && mas_plays_left) {  // short act: once more
+            mas_plays_left--;
+            mas_frame = 0;
+            mas_from_loop = false;
+            mas_render(a, 0, mas_face < 0, &mas_dsc, mas_buf, mas_img,
+                       mas_cell, mas_x, mas_feet_y);
             return;
         }
         mas_show_still();                           // acts end on the idle pose
