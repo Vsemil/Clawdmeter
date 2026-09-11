@@ -101,6 +101,29 @@ def test_credentials_without_expiry_never_expire(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Blank credentials must read as ABSENT. Logging out of the CLI empties the
+# values in place rather than deleting them; "" is a str, so a type-only check
+# would pass it through and the daemon would poll with an empty Bearer token.
+# ---------------------------------------------------------------------------
+
+def test_blank_token_in_file_reads_as_absent(tmp_path, monkeypatch):
+    monkeypatch.setattr(mod.sys, "platform", "linux")
+    (tmp_path / ".credentials.json").write_text(
+        '{"claudeAiOauth":{"accessToken":"","refreshToken":"","expiresAt":0}}'
+    )
+    assert _tokens(tmp_path) == []
+
+
+def test_blank_token_in_blob_reads_as_absent():
+    """Same guard on the extraction chokepoint the Keychain path goes through."""
+    assert mod._extract_credentials('{"accessToken":""}', "test") is None
+    assert (
+        mod._extract_credentials('{"claudeAiOauth":{"accessToken":"","expiresAt":0}}', "test")
+        is None
+    )
+
+
+# ---------------------------------------------------------------------------
 # PlanSelector — the "active = recent API activity" rule
 # ---------------------------------------------------------------------------
 
