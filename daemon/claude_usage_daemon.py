@@ -521,10 +521,12 @@ def _extract_credentials(blob: str, source: str) -> Credentials | None:
         data = None
     if isinstance(data, dict):
         # direct {"accessToken": ...} first, then one level of nesting
-        # ({"claudeAiOauth": {...}}) — Claude Code's own layout.
+        # ({"claudeAiOauth": {...}}) — Claude Code's own layout. Logging out
+        # blanks the values in place rather than deleting the entry, so an
+        # empty/whitespace token must read as absent, not as a "" Bearer.
         for holder in [data, *(v for v in data.values() if isinstance(v, dict))]:
             token = holder.get("accessToken")
-            if isinstance(token, str) and token:
+            if isinstance(token, str) and token.strip():
                 exp = holder.get("expiresAt")
                 valid_exp = isinstance(exp, (int, float)) and exp > 0
                 return Credentials(token, exp / 1000 if valid_exp else None, source)
