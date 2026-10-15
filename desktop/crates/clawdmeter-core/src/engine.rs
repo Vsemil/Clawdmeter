@@ -506,6 +506,11 @@ impl Engine {
             (p, kind)
         };
 
+        payload.er = if self.logged_out {
+            Some("auth".to_owned())
+        } else {
+            self.active_state().and_then(|a| a.last_error.as_ref()).map(|e| e.device_code().to_owned())
+        };
         let att = self.attention.fields(self.settings.alert_chime);
         if att.beep {
             payload.b = Some(1);
@@ -732,7 +737,7 @@ mod tests {
         let mut e = Engine::new(settings(""));
         e.on_poll_results(T0, vec![(PathBuf::from("/h/.claude"), Err(UsageError::NotLoggedIn("x".into())))]);
         let w = write(&mut e, T0).unwrap();
-        assert_eq!((w.kind, w.payload.to_json().as_str()), (WriteKind::NoData, r#"{"ok":false}"#));
+        assert_eq!((w.kind, w.payload.to_json().as_str()), (WriteKind::NoData, r#"{"ok":false,"er":"auth"}"#));
         assert!(write(&mut e, T0 + 100).is_none());
     }
 

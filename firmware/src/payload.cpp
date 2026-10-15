@@ -85,6 +85,7 @@ bool payload_parse(const char* json, UsageData* out, const char** err) {
         d.scoped_pct = (int16_t)(v < 0 ? 0 : v > 100 ? 100 : v);
     }
     copy_str(d.scoped_name, sizeof(d.scoped_name), doc["fn"] | "");
+    copy_str(d.err, sizeof(d.err), doc["er"] | "");
 
     d.ok = doc["ok"] | false;
     d.valid = true;

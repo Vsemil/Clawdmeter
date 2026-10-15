@@ -39,6 +39,7 @@ struct UsageData {
     char     alert_project[48]; // `pj` the project it's from, UTF-8; "" = absent
     int16_t  scoped_pct;     // `f`  the hottest model-scoped weekly limit, 0-100; -1 = absent
     char     scoped_name[16];// `fn` its model ("Fable"); "" = absent
+    char     err[8];         // `er` why the numbers aren't fresh (auth|token|rate|net|app); "" = absent
     bool ok;                 // data parse succeeded
     bool valid;              // false until first successful parse
 };

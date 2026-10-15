@@ -17,6 +17,7 @@
 //   lg  interface language code ("en", "ru"), "" absent
 //   k   alert kind with `m` (alert_kind.h), "" absent    pj  its project, "" absent
 //   f   model-scoped weekly limit % (clamped 0-100), -1 absent    fn  its model, "" absent
+//   er  why the numbers aren't fresh (auth, token, rate, net, app), "" absent
 //
 // Returns false on malformed JSON; `*err` (if non-null) then points at a
 // static description. `out` is fully overwritten on success, untouched on

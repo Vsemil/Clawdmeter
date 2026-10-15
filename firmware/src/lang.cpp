@@ -93,6 +93,7 @@ const UiText UI_TEXT_EN = {
     "Under pace - Resets May 30",
     "Resets May 30",
     "Waiting", "Listening", "Connected", "No data", "Stale",
+    { "Log in again", "Token expired", "Rate limited", "No network", "Poll failed" },
     { SPINNER "Connected" ELLIPSIS, SPINNER "Listening" ELLIPSIS,
       SPINNER "Waiting" ELLIPSIS,   SPINNER "No data" ELLIPSIS,
       SPINNER "Stale" ELLIPSIS },
@@ -119,6 +120,7 @@ const UiText UI_TEXT_RU = {
     "Ниже темпа - Сброс 30 мая",
     "Сброс 30 мая",
     "Ожидание", "Слушает", "На связи", "Нет цифр", "Устарело",
+    { "Войдите заново", "Обновите токен", "Лимит запросов", "Нет сети", "Сбой опроса" },
     { SPINNER "На связи" ELLIPSIS, SPINNER "Слушает" ELLIPSIS,
       SPINNER "Ожидание" ELLIPSIS,   SPINNER "Нет цифр" ELLIPSIS,
       SPINNER "Устарело" ELLIPSIS },
@@ -136,6 +138,13 @@ const UiText* lang_find(const char* code) {
     if (!code || !*code) return nullptr;
     for (const UiText* t : ALL)
         if (!strcmp(code, t->code)) return t;
+    return nullptr;
+}
+
+const char* lang_err_text(const char* code) {
+    static const char* const CODES[5] = { "auth", "token", "rate", "net", "app" };
+    for (int i = 0; i < 5; i++)
+        if (code && !strcmp(code, CODES[i])) return S->st_err[i];
     return nullptr;
 }
 

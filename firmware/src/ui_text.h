@@ -58,6 +58,9 @@ struct UiText {
     const char* st_connected;
     const char* st_no_data;
     const char* st_stale;
+    // Why the numbers aren't fresh (`er`), in place of st_stale/st_no_data
+    // where it fits: auth, token, rate, net, app.
+    const char* st_err[5];
 
     // Status-line words every panel must fit (the whimsical verbs are
     // skipped when they don't): "<spinner> <word>…".
@@ -86,3 +89,5 @@ extern const UiText* S;
 const UiText* lang_find(const char* code);
 // Make `t` the table in use (null keeps the current one).
 void lang_select(const UiText* t);
+// The `er` code's text in the table in use, nullptr for "" or unknown.
+const char* lang_err_text(const char* code);

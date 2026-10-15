@@ -49,3 +49,4 @@ seconds) and sends `x` if the device still shows it.
 | `pj` | With `m`: the project the alert is from (the session's git root, else its cwd), shown after the caption. |
 | `f` | The hottest model-scoped weekly limit, % used (the endpoint's `limits[]` `weekly_scoped` entries, or `model_scoped[]`; the CLI's "Current week (Fable)"). Shown at the right of the weekly card's reset line when it fits. Absent: no such limit. |
 | `fn` | Its model's display name, at most 12 characters. |
+| `er` | Why the numbers aren't fresh: the shown account's last poll failed (`auth` log in again, `token` waiting for Claude Code to refresh it, `rate` throttled, `net` offline, `app` the CLI failed), on any payload; `auth` with `{"ok":false}` when every account is logged out. The device names it on the status line in place of "Stale"/"No data" where it fits. |

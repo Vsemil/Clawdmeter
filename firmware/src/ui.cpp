@@ -82,6 +82,7 @@ static lv_image_dsc_t battery_dscs[6];  // empty, low, medium, full, charging, p
 #define STALE_OPA LV_OPA_40
 static uint32_t  last_data_ms = 0;      // lv_tick when the last valid usage update landed
 static bool      data_received = false; // any valid update since boot
+static char      last_err[8] = "";     // the last payload's `er`
 static bool      data_ok = true;        // last payload's ok flag; a {"ok":false} beat = "no fresh data"
 static int       view_state = -1;       // -1 unknown / 0 pair / 1 stale / 2 live
 static const uint32_t DATA_FRESH_MS = 90000;  // usage counts as "live" within this window (daemon sends ~60s)
@@ -122,6 +123,17 @@ static uint8_t fitting_verb(uint8_t i) {
         if (layout_text_width(L.status_font, buf) <= L.status_w) return i;
     }
     return i;
+}
+
+// The stale / no-data word, or the reason the app gave (`er`) where that fits
+// the status line.
+static const char* stale_text(void) {
+    const char* base = data_received ? S->st_stale : S->st_no_data;
+    const char* why = lang_err_text(last_err);
+    if (!why) return base;
+    char probe[64];
+    snprintf(probe, sizeof(probe), "%s %s\xE2\x80\xA6", spinner_frames[1], why);
+    return layout_text_width(L.status_font, probe) <= L.status_w ? why : base;
 }
 
 static lv_color_t pct_color(float pct) {
@@ -494,6 +506,7 @@ void ui_init(void) {
 
 void ui_update(const UsageData* data) {
     if (!data->valid) return;
+    snprintf(last_err, sizeof(last_err), "%s", data->err);   // why the numbers aren't fresh, if they aren't
     data_ok = data->ok;
     if (!data->ok) return;          // a {"ok":false} "no data" beat → fall through to idle, keep last numbers
     last_data_ms = lv_tick_get();   // a real usage update just landed
@@ -673,7 +686,7 @@ void ui_tick_anim(void) {
     if (still) {
         // One glyph, one word per state; redrawn only when it changes.
         const char* text = !s_ble_connected ? S->st_waiting
-                         : view_state == 1 ? (data_received ? S->st_stale : S->st_no_data) : S->st_connected;
+                         : view_state == 1 ? stale_text() : S->st_connected;
         if (text != still_shown) {
             still_shown = text;
             static char sbuf[40];
@@ -709,7 +722,7 @@ void ui_tick_anim(void) {
     if (!s_ble_connected) {
         text = S->st_waiting;           // advertising / waiting for a host connection
     } else if (view_state == 1) {      // stale — alternate so it reads as alive AND not live
-        text = (anim_msg_idx & 1) ? (data_received ? S->st_stale : S->st_no_data) : S->st_listening;
+        text = (anim_msg_idx & 1) ? stale_text() : S->st_listening;
     } else if (now - connected_at_ms < 5000) {
         text = S->st_connected;
     } else {
