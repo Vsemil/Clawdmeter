@@ -58,13 +58,14 @@ struct UiText {
     const char* st_connected;
     const char* st_no_data;
     const char* st_stale;
+    const char* st_resting;        // connected, Claude isn't working
     // Why the numbers aren't fresh (`er`), in place of st_stale/st_no_data
     // where it fits: auth, token, rate, net, app.
     const char* st_err[5];
 
     // Status-line words every panel must fit (the whimsical verbs are
     // skipped when they don't): "<spinner> <word>…".
-    const char* status_required[5];
+    const char* status_required[6];
 
     // Weekday abbreviations, Sunday first: the weekly reset's wall-clock
     // time, "Resets in 6d 2h (Sun 00:20)".

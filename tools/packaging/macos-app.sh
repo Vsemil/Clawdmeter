@@ -3,7 +3,10 @@
 # release.yml packages it: an app bundle, because CoreBluetooth needs
 # NSBluetoothAlwaysUsageDescription in the responsible app's Info.plist or
 # macOS kills the process under the LaunchAgent. GPUI compiles its shaders
-# at run time (gpui/runtime_shaders), so no Metal toolchain is needed.
+# at run time (gpui/runtime_shaders), so no Metal toolchain is needed. The
+# calendar descriptions are there because macOS asks about the calnext
+# helper's calendar access on behalf of the app that runs it: without them it
+# refuses silently, with no prompt.
 #
 #   tools/packaging/macos-app.sh [install dir, default /Applications]
 set -euo pipefail
@@ -31,6 +34,8 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key><string>11.0</string>
   <key>LSUIElement</key><true/>
   <key>NSBluetoothAlwaysUsageDescription</key><string>Clawdmeter sends your Claude Code usage to your Clawdmeter over Bluetooth.</string>
+  <key>NSCalendarsFullAccessUsageDescription</key><string>Clawdmeter shows meeting reminders on your desk display.</string>
+  <key>NSCalendarsUsageDescription</key><string>Clawdmeter shows meeting reminders on your desk display.</string>
 </dict></plist>
 PLIST
 plutil -lint "$app/Contents/Info.plist"

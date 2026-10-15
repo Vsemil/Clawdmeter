@@ -14,6 +14,7 @@
 #include "hal/board_caps.h"
 #include "layout.h"
 #include "ui_text.h"
+#include "signals.h"
 
 // Where everything goes, from the panel's shape (layout.h). Computed once in
 // ui_init() and treated as const for the rest of the program; a new panel
@@ -134,6 +135,13 @@ static const char* stale_text(void) {
     char probe[64];
     snprintf(probe, sizeof(probe), "%s %s\xE2\x80\xA6", spinner_frames[1], why);
     return layout_text_width(L.status_font, probe) <= L.status_w ? why : base;
+}
+
+// Claude isn't working: the hooks are in, the last hook event wasn't a
+// prompt (a turn running) and there were no tool calls in the last minute.
+// Without hooks nothing is known, and the line keeps its verbs.
+static bool claude_resting(void) {
+    return signals_hooks_seen() && signals_activity() <= 0 && signals_last_event() != 'p';
 }
 
 static lv_color_t pct_color(float pct) {
@@ -706,7 +714,9 @@ void ui_tick_anim(void) {
         anim_msg_start = now;
     }
 
-    if (tune.spinner) {
+    // Claude is resting: nothing to animate, the line holds "<glyph> Resting…".
+    const bool resting = s_ble_connected && view_state == 2 && now - connected_at_ms >= 5000 && claude_resting();
+    if (tune.spinner && !resting) {
         if (now - anim_last_ms < spinner_ms[anim_spinner_idx]) return;
         anim_last_ms = now;
         anim_phase = (anim_phase + 1) % SPINNER_PHASES;
@@ -725,11 +735,13 @@ void ui_tick_anim(void) {
         text = (anim_msg_idx & 1) ? stale_text() : S->st_listening;
     } else if (now - connected_at_ms < 5000) {
         text = S->st_connected;
+    } else if (resting) {
+        text = S->st_resting;
     } else {
         text = S->words[anim_verb_idx];
     }
 
-    if (!tune.spinner) {
+    if (!tune.spinner || resting) {
         if (text == frozen_shown) return;
         frozen_shown = text;
     }
