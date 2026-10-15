@@ -37,8 +37,9 @@ pub const DONE_ALERT_TTL: Duration = Duration::from_secs(30);
 pub const TEST_SESSION: &str = "clawdmeter-test";
 /// The device's message buffer holds this many UTF-8 bytes.
 pub const MESSAGE_LIMIT: usize = 120;
-/// ...and its project name buffer this many.
-pub const PROJECT_LIMIT: usize = 40;
+/// ...and the text after an alert's caption (`pj`: a project, a meeting, a
+/// message) this many.
+pub const PROJECT_LIMIT: usize = 90;
 
 /// What a session is waiting for. The hook records it (`k`) from Claude
 /// Code's hook input; which kinds alert is the `alert_on` setting.

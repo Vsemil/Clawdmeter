@@ -30,8 +30,10 @@ OPTIONS:
     --once            Poll /usage for every account once, print the payload, exit (no BLE)
     --ports           List attached Espressif USB ports
     --info PORT       Ask the firmware on PORT for its env/version
-    hook MODE [event] Claude Code hook (MODE: alert, clear or event); reads the
+    hook MODE [event] Claude Code hook (MODE: alert, clear, event or done); reads the
                       hook JSON on stdin, prints nothing, always exits 0
+    mcp               MCP server on stdio (show_message, clear_message,
+                      device_status); register with `claude mcp add`
     -V, --version
     -h, --help
 
@@ -59,6 +61,10 @@ fn main() {
     // GPUI, no tray; read stdin, write a file, exit 0.
     if args.first().map(String::as_str) == Some("hook") {
         std::process::exit(clawdmeter_app::hooks::main(&args[1..]));
+    }
+    // An MCP client talks JSON-RPC on stdio: nothing else may print there.
+    if args.first().map(String::as_str) == Some("mcp") {
+        std::process::exit(clawdmeter_app::mcp::main());
     }
     let paths = Paths::for_user();
     if args.is_empty() {

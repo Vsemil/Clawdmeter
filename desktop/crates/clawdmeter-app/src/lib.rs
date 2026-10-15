@@ -18,6 +18,7 @@ pub mod errors;
 pub mod hooks;
 pub mod ipc;
 pub mod logger;
+pub mod mcp;
 pub mod onboarding;
 pub mod tray;
 pub mod ui;

@@ -432,7 +432,7 @@ static void init_usage_screen(lv_obj_t* scr) {
 // ---- Attention message on the status line (the director sequences the rest).
 static bool alert_active = false;
 static AlertKind alert_kind = AK_NONE;   // ui_set_alert_style
-static char alert_project[48] = "";
+static char alert_project[96] = "";
 static const char* still_shown = nullptr;   // minimal mode: status word on screen
 
 // ======== Public API ========
