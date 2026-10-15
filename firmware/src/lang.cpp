@@ -96,6 +96,8 @@ const UiText UI_TEXT_EN = {
     { SPINNER "Connected" ELLIPSIS, SPINNER "Listening" ELLIPSIS,
       SPINNER "Waiting" ELLIPSIS,   SPINNER "No data" ELLIPSIS,
       SPINNER "Stale" ELLIPSIS },
+    { "", "Permission needed", "Question for you", "Waiting for you", "MCP request",
+      "Done!", "Limit almost hit!", "Limits refreshed!", "Meeting soon!", "Meeting started!", "" },
     WORDS_EN, COUNT(WORDS_EN),
 };
 
@@ -119,6 +121,8 @@ const UiText UI_TEXT_RU = {
     { SPINNER "На связи" ELLIPSIS, SPINNER "Слушает" ELLIPSIS,
       SPINNER "Ожидание" ELLIPSIS,   SPINNER "Нет цифр" ELLIPSIS,
       SPINNER "Устарело" ELLIPSIS },
+    { "", "Нужно разрешение", "Вопрос к вам", "Клод ждёт ответа", "Запрос MCP",
+      "Готово!", "Лимит близко!", "Лимиты обновились!", "Скоро встреча!", "Встреча началась!", "" },
     WORDS_RU, COUNT(WORDS_RU),
 };
 

@@ -29,3 +29,7 @@ void ui_set_pair_hint(PairHint hint);
 // Attention message on the status line (scrolls when long); NULL clears it
 // and the whimsical status line resumes.
 void ui_set_alert_text(const char* message);
+// What the next alert is (alert_kind.h) and which project it's from (may be
+// empty): a known kind shows its caption, coloured, then the project,
+// instead of the message. Set before director_alert(); kept until the next.
+void ui_set_alert_style(uint8_t kind, const char* project);

@@ -53,6 +53,9 @@ void mascot_reset(void);             // seated now, nothing pending
 // to_seat=false (only meaningful with on=false): the small one stays off
 // screen after the big one leaves, for a screensaver that resumes.
 void mascot_attention(bool on, bool to_seat = true);
+// The two acts the next attention alternates (alert_kind_acts): set before
+// the alert, kept until the next. Unknown names keep the last pair.
+void mascot_attention_acts(const char* a, const char* b);
 bool mascot_in_attention(void);      // anything of the attention beat still on screen
 
 void mascot_set_minimal(bool on);    // still frame only, no autonomy

@@ -59,7 +59,9 @@ static uint32_t seated_since = 0;
 static uint32_t idle_gap = 7000;
 static const char* last_act = NULL;
 static int      big_dx = 0;
-static uint8_t  big_act = 0;           // 0 waving, 1 pointing (attention, either size)
+static uint8_t  big_act = 0;           // which of attn_acts plays (attention, either size)
+// The two acts attention alternates: the alert kind's pair (mascot_attention_acts).
+static const char* attn_acts[2] = { "waving", "pointing" };
 static ClawdRng rng;
 
 // Per mood group: how long he sits between acts and which acts he picks.
@@ -196,7 +198,7 @@ static void big_enter(void) {
 
 static void seat_attention(void) {
     big_act = 0;
-    start_frames(clawd_anim("waving"));
+    start_frames(clawd_anim(attn_acts[0]));
     speed = 100;
     facing = +1;
     x = slot_x;
@@ -245,7 +247,8 @@ lv_obj_t* mascot_create(lv_obj_t* parent, int sx, int feet, int c) {
     const ClawdAnim* lurk = clawd_anim("lurking");
     if (lurk) lurk_feet_y = ((SPLASH_GRID - CLAWD_ART_H) / 2 + lurk->oy + lurk->h) * lurk_cell;
     size_t big_bytes = 0;
-    static const char* const BIG[] = { "lurking", "walking", "waving", "pointing" };
+    // Every act an alert kind can ask for (alert_kind_acts), so the buffer fits them all.
+    static const char* const BIG[] = { "lurking", "walking", "waving", "pointing", "dancing", "jumping happy" };
     for (const char* n : BIG) {
         const ClawdAnim* a = clawd_anim(n);
         if (!a) continue;
@@ -401,6 +404,11 @@ void mascot_set_minimal(bool on) {
     mascot_reset();
 }
 
+void mascot_attention_acts(const char* a, const char* b) {
+    // Only names the animation table has; keep the last good pair otherwise.
+    if (a && b && clawd_anim(a) && clawd_anim(b)) { attn_acts[0] = a; attn_acts[1] = b; }
+}
+
 void mascot_attention(bool on, bool to_seat) {
     if (!img || on == attn) return;
     attn = on;
@@ -494,7 +502,7 @@ void mascot_tick(void) {
     if (next >= a->frame_count) {
         if (mode == M_BIG_ACT || mode == M_SEAT_ATTN) {   // wave, point, wave, ...
             big_act ^= 1;
-            start_frames(clawd_anim(big_act ? "pointing" : "waving"));
+            start_frames(clawd_anim(attn_acts[big_act]));
             speed = 100;
             if (mode == M_BIG_ACT) draw_big();
             else                   draw_corner();
@@ -529,7 +537,7 @@ void mascot_tick(void) {
                 big_dx = 0;
                 big_act = 0;
                 mode = M_BIG_ACT;
-                start_frames(clawd_anim("waving"));
+                start_frames(clawd_anim(attn_acts[0]));
                 speed = 100;
                 draw_big();
                 return;

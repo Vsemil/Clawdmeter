@@ -385,6 +385,8 @@ static void init_usage_screen(lv_obj_t* scr) {
 
 // ---- Attention message on the status line (the director sequences the rest).
 static bool alert_active = false;
+static AlertKind alert_kind = AK_NONE;   // ui_set_alert_style
+static char alert_project[48] = "";
 static const char* still_shown = nullptr;   // minimal mode: status word on screen
 
 // ======== Public API ========
@@ -706,9 +708,38 @@ void ui_update_battery(int percent, bool charging, bool usb_power) {
     apply_battery_visibility();
 }
 
+void ui_set_alert_style(uint8_t kind, const char* project) {
+    alert_kind = kind < AK_COUNT ? (AlertKind)kind : AK_NONE;
+    snprintf(alert_project, sizeof(alert_project), "%s", project ? project : "");
+}
+
+static lv_color_t alert_color(AlertKind k) {
+    switch (k) {
+        case AK_PERMISSION:
+        case AK_LIMIT:      return COL_RED;
+        case AK_DONE:
+        case AK_RESET:      return COL_GREEN;
+        case AK_CAL:        return THEME_BLUE;
+        case AK_CAL_START:  return THEME_YELLOW;
+        default:            return COL_ACCENT;
+    }
+}
+
 void ui_set_alert_text(const char* message) {
     if (message && message[0]) {
         alert_active = true;
+        // A known kind: its caption in the language in use, then the project.
+        static char text[200];
+        const char* shown = message;
+        if (!alert_kind_shows_message(alert_kind)) {
+            if (alert_project[0])
+                snprintf(text, sizeof(text), "%s \xC2\xB7 %s", S->alert_caption[alert_kind], alert_project);
+            else
+                snprintf(text, sizeof(text), "%s", S->alert_caption[alert_kind]);
+            shown = text;
+        }
+        message = shown;
+        lv_obj_set_style_text_color(lbl_anim, alert_color(alert_kind), 0);
         // Minimal mode: nothing moves, so a long message is cut, not scrolled.
         lv_label_set_long_mode(lbl_anim, minimal_mode() ? LV_LABEL_LONG_DOT
                                                         : LV_LABEL_LONG_SCROLL_CIRCULAR);
@@ -719,6 +750,7 @@ void ui_set_alert_text(const char* message) {
     }
     if (!alert_active) return;
     alert_active = false;
+    lv_obj_set_style_text_color(lbl_anim, COL_ACCENT, 0);
     lv_label_set_long_mode(lbl_anim, LV_LABEL_LONG_WRAP);
     lv_obj_set_size(lbl_anim, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     anim_last_ms = 0;          // whimsical line redraws on the next tick

@@ -75,6 +75,8 @@ bool payload_parse(const char* json, UsageData* out, const char** err) {
     }
 
     copy_str(d.lang, sizeof(d.lang), doc["lg"] | "");
+    copy_str(d.alert_kind, sizeof(d.alert_kind), doc["k"] | "");
+    copy_str(d.alert_project, sizeof(d.alert_project), doc["pj"] | "");
 
     d.ok = doc["ok"] | false;
     d.valid = true;

@@ -1,4 +1,5 @@
 #pragma once
+#include "alert_kind.h"
 
 // Every phrase the device shows, one table per language (lang.cpp). The app
 // picks the language with the payload's `lg` key; the device keeps it in NVS
@@ -61,6 +62,10 @@ struct UiText {
     // Status-line words every panel must fit (the whimsical verbs are
     // skipped when they don't): "<spinner> <word>…".
     const char* status_required[5];
+
+    // An alert's caption on the status line, by kind (alert_kind.h); the
+    // kinds that show their message as sent have none.
+    const char* alert_caption[AK_COUNT];
 
     // The whimsical verbs, Claude Code's spinner words.
     const char* const* words;

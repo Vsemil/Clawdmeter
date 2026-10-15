@@ -21,6 +21,7 @@
 #include "clawd_prefs.h"
 #include "perf.h"
 #include "pair_hold.h"
+#include "alert_kind.h"
 
 #include "hal/board_caps.h"
 #include "hal/display_hal.h"
@@ -477,11 +478,13 @@ void loop() {
                 Serial.println("session reset detected — chime");
                 sound_hal_chime();
             }
-            // Claude Code hook fired on the host: the same ding. Not gated on
-            // `c`: the app only sets `b` when its alert chime is on.
+            // Claude Code hook fired on the host: its kind's melody (the ding
+            // for an unknown kind). Not gated on `c`: the app only sets `b`
+            // when its alert chime is on.
+            const AlertKind kind = alert_kind_parse(usage.alert_kind);
             if (usage.beep) {
-                Serial.println("attention — chime");
-                sound_hal_chime();
+                Serial.printf("attention — %s\n", melody_name(alert_kind_melody(kind)));
+                sound_hal_melody(alert_kind_melody(kind));
             }
             ui_update(&usage);
             // A prompt (or you're back after a gap): you're at the computer,
@@ -496,6 +499,10 @@ void loop() {
             if (usage.alert_msg[0]) {
                 Serial.println("attention — mascot");
                 idle_note_activity();
+                const char *act_a, *act_b;
+                alert_kind_acts(kind, &act_a, &act_b);
+                mascot_attention_acts(act_a, act_b);
+                ui_set_alert_style(kind, usage.alert_project);
                 director_alert(usage.alert_msg);
             }
             if (usage.alert_clear) director_alert_clear();

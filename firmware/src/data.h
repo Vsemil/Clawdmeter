@@ -35,6 +35,8 @@ struct UsageData {
     int8_t   liveliness;     // `lv` 1-5 (clamped); -1 = absent (keep the saved level)
     int16_t  attn_anim_s;    // `aa` attention animation, seconds 0-120 (0 = off); -1 = absent
     char     lang[4];        // `lg` interface language ("en", "ru"); "" = absent (keep the saved one)
+    char     alert_kind[12]; // `k`  what the alert is about (alert_kind.h); "" = absent
+    char     alert_project[48]; // `pj` the project it's from, UTF-8; "" = absent
     bool ok;                 // data parse succeeded
     bool valid;              // false until first successful parse
 };
