@@ -39,7 +39,7 @@ fn captured_max_plan() {
     assert!(r.window_started());
     assert_eq!(
         Payload::from_reading(&r, now()).to_json(),
-        r#"{"s":15,"sr":80,"w":6,"wr":8180,"st":"allowed","acct":"pro","ok":true}"#
+        r#"{"s":15,"sr":80,"w":6,"wr":8180,"st":"allowed","acct":"pro","ok":true,"f":0,"fn":"Fable"}"#
     );
 }
 

@@ -63,6 +63,10 @@ struct UiText {
     // skipped when they don't): "<spinner> <word>…".
     const char* status_required[5];
 
+    // Weekday abbreviations, Sunday first: the weekly reset's wall-clock
+    // time, "Resets in 6d 2h (Sun 00:20)".
+    const char* weekday[7];
+
     // An alert's caption on the status line, by kind (alert_kind.h); the
     // kinds that show their message as sent have none.
     const char* alert_caption[AK_COUNT];

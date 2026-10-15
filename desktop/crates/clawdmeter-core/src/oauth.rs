@@ -172,13 +172,28 @@ pub fn parse_usage_json(body: &str, now: DateTime<Utc>) -> Result<UsageReading, 
     let v: Value = serde_json::from_str(body).map_err(|e| UsageError::BadOutput(format!("usage endpoint: {e}")))?;
     let session = window(v.get("five_hour"), "utilization").filter(|w| w.resets_at.is_some_and(|t| t > now));
     let week = window(v.get("seven_day"), "utilization");
-    let models = v
+    let mut models: Vec<(String, Window)> = v
         .get("model_scoped")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
         .filter_map(|m| Some((m.get("display_name")?.as_str()?.to_owned(), window(Some(m), "utilization")?)))
         .collect();
+    if models.is_empty() {
+        // The same limits as `limits[]` entries: {"kind": "weekly_scoped",
+        // "percent", "resets_at", "scope": {"model": {"display_name"}}}.
+        models = v
+            .get("limits")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter(|l| l.get("kind").and_then(Value::as_str) == Some("weekly_scoped"))
+            .filter_map(|l| {
+                let name = l.pointer("/scope/model/display_name")?.as_str()?.to_owned();
+                Some((name, window(Some(l), "percent")?))
+            })
+            .collect();
+    }
     let spend = v
         .get("limits")
         .and_then(Value::as_array)
@@ -300,6 +315,25 @@ mod tests {
         assert!(!r.overage && r.spend.is_none());
     }
 
+    // The scoped limit as a `limits[]` entry (how the endpoint answered in
+    // the summer of 2026) reads the same.
+    #[test]
+    fn scoped_limit_from_the_limits_list() {
+        let now = at("2026-10-14T01:20:00Z");
+        let body = r#"{"five_hour":{"utilization":35.0,"resets_at":"2026-10-14T02:40:00Z"},
+            "seven_day":{"utilization":20.0,"resets_at":"2026-10-19T00:00:00Z"},
+            "limits":[{"kind":"session","severity":"normal"},
+                      {"kind":"weekly_scoped","percent":72,"resets_at":"2026-10-19T00:00:00Z",
+                       "scope":{"model":{"display_name":"Fable"}}}]}"#;
+        let r = parse_usage_json(body, now).unwrap();
+        assert_eq!(
+            r.models,
+            vec![("Fable".to_owned(), Window { pct: 72, resets_at: Some(at("2026-10-19T00:00:00Z")) })]
+        );
+        let p = crate::payload::Payload::from_reading(&r, now);
+        assert_eq!((p.f, p.fn_.as_deref()), (Some(72), Some("Fable")));
+    }
+
     // A real answer from a subscription account with no window running:
     // five_hour {utilization 0, resets_at null}, the session limit inactive,
     // the week at 40 %.
@@ -311,7 +345,9 @@ mod tests {
         assert_eq!(r.session, None, "a null reset is a window that hasn't started, not 0 % of one");
         assert!(!r.window_started());
         assert_eq!(r.week, Some(Window { pct: 40, resets_at: Some(at("2026-10-14T15:00:00.006703Z")) }));
-        assert!(r.spend.is_none() && !r.overage && r.models.is_empty());
+        assert!(r.spend.is_none() && !r.overage);
+        // The real answer has no `model_scoped`: the Fable limit is a `limits[]` entry.
+        assert_eq!(r.models.iter().map(|(n, w)| (n.as_str(), w.pct)).collect::<Vec<_>>(), vec![("Fable", 0)]);
         let p = crate::Payload::from_reading(&r, now);
         assert_eq!((p.s, p.sr, p.w, p.wr), (Some(0), Some(-1), Some(40), Some(750)));
         assert_eq!(p.acct.as_deref(), Some("pro"));

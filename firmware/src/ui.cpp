@@ -59,6 +59,7 @@ static lv_obj_t* bar_weekly;
 static lv_obj_t* lbl_weekly_pct;
 static lv_obj_t* lbl_weekly_label;
 static lv_obj_t* lbl_weekly_reset;
+static lv_obj_t* lbl_weekly_scoped;   // the model-scoped weekly limit ("Fable 72%"), right of the reset line
 static lv_obj_t* panel_session = nullptr;
 static lv_obj_t* panel_weekly = nullptr;
 // Enterprise-only widgets inside panel_session
@@ -141,6 +142,35 @@ static void format_reset_time(int mins, char* buf, size_t len, const char* none)
     } else {
         snprintf(buf, len, L.reset_short ? S->reset_short[2] : S->reset_dh, mins / 1440, (mins % 1440) / 60);
     }
+}
+
+// " (Sun 00:20)": when a window resets on the wall clock, from the app's
+// local epoch `t` (0: no clock, nothing). The weekday only for resets a day
+// or more away. 12-hour clocks say "4:20 PM".
+static void reset_clock_suffix(int mins, long epoch, int fmt, bool weekday, char* out, size_t len) {
+    out[0] = 0;
+    if (mins < 0 || epoch <= 0) return;
+    const time_t at = (time_t)(epoch + (long)mins * 60);
+    struct tm tmv;
+    gmtime_r(&at, &tmv);   // the epoch is already local wall-clock time
+    char hm[12];
+    if (fmt == 12) {
+        const int h12 = tmv.tm_hour % 12 ? tmv.tm_hour % 12 : 12;
+        snprintf(hm, sizeof(hm), "%d:%02d %s", h12, tmv.tm_min, tmv.tm_hour < 12 ? "AM" : "PM");
+    } else {
+        snprintf(hm, sizeof(hm), "%02d:%02d", tmv.tm_hour, tmv.tm_min);
+    }
+    if (weekday && mins >= 1440) snprintf(out, len, " (%s %s)", S->weekday[tmv.tm_wday], hm);
+    else                         snprintf(out, len, " (%s)", hm);
+}
+
+// The reset line, as much of it as fits `room` px in `f`: the countdown,
+// then " (wall-clock time)" when it fits too.
+static void fit_reset_line(char* buf, size_t len, const char* suffix, const lv_font_t* f, int room) {
+    if (!suffix[0]) return;
+    char with[128];
+    snprintf(with, sizeof(with), "%s%s", buf, suffix);
+    if (layout_text_width(f, with) <= room) snprintf(buf, len, "%s", with);
 }
 
 static lv_obj_t* make_panel(lv_obj_t* parent, int x, int y, int w, int h) {
@@ -372,6 +402,10 @@ static void init_usage_screen(lv_obj_t* scr) {
                      &bar_weekly, &lbl_weekly_reset);
     // Recolor enabled so enterprise period box can color pace and reset separately
     lv_label_set_recolor(lbl_weekly_reset, true);
+    lbl_weekly_scoped = lv_label_create(panel_weekly);
+    lv_obj_set_style_text_font(lbl_weekly_scoped, L.reset_font, 0);
+    lv_obj_align(lbl_weekly_scoped, LV_ALIGN_TOP_RIGHT, 0, L.reset_y);
+    lv_obj_add_flag(lbl_weekly_scoped, LV_OBJ_FLAG_HIDDEN);
 
     build_pair_group(usage_container);
 
@@ -518,6 +552,9 @@ void ui_update(const UsageData* data) {
     } else {
         lv_label_set_text_fmt(lbl_session_pct, "%d%%", s_pct);
         format_reset_time(data->session_reset_mins, buf, sizeof(buf), S->not_started);
+        char suffix[40];
+        reset_clock_suffix(data->session_reset_mins, data->clock_epoch, data->clock_fmt, false, suffix, sizeof(suffix));
+        fit_reset_line(buf, sizeof(buf), suffix, L.reset_font, L.card[0].w - 2 * L.pad_x);
         lv_label_set_text(lbl_session_reset, buf);
     }
 
@@ -526,6 +563,7 @@ void ui_update(const UsageData* data) {
 
     if (data->enterprise) {
         // Period box: time % + dynamic pace color + "Resets <date>" label
+        lv_obj_add_flag(lbl_weekly_scoped, LV_OBJ_FLAG_HIDDEN);
         lv_label_set_text(lbl_weekly_label, L.pills[3]);
         lv_label_set_text_fmt(lbl_weekly_pct, "%d%%", data->time_pct);
         lv_bar_set_value(bar_weekly, data->time_pct, LV_ANIM_ON);
@@ -548,6 +586,24 @@ void ui_update(const UsageData* data) {
         lv_bar_set_value(bar_weekly, w_pct, LV_ANIM_ON);
         lv_obj_set_style_bg_color(bar_weekly, pct_color(data->weekly_pct), LV_PART_INDICATOR);
         format_reset_time(data->weekly_reset_mins, buf, sizeof(buf), "---");
+        // The model-scoped limit takes the right end of the reset line when
+        // both fit; the wall-clock time only joins them when it fits too.
+        int room = L.card[1].w - 2 * L.pad_x;
+        lv_obj_add_flag(lbl_weekly_scoped, LV_OBJ_FLAG_HIDDEN);
+        if (data->scoped_pct >= 0 && data->scoped_name[0]) {
+            char scoped[32];
+            snprintf(scoped, sizeof(scoped), "%s %d%%", data->scoped_name, data->scoped_pct);
+            const int sw = layout_text_width(L.reset_font, scoped) + 16;
+            if (layout_text_width(L.reset_font, buf) + sw <= room) {
+                lv_label_set_text(lbl_weekly_scoped, scoped);
+                lv_obj_set_style_text_color(lbl_weekly_scoped, pct_color((float)data->scoped_pct), 0);
+                lv_obj_clear_flag(lbl_weekly_scoped, LV_OBJ_FLAG_HIDDEN);
+                room -= sw;
+            }
+        }
+        char suffix[40];
+        reset_clock_suffix(data->weekly_reset_mins, data->clock_epoch, data->clock_fmt, true, suffix, sizeof(suffix));
+        fit_reset_line(buf, sizeof(buf), suffix, L.reset_font, room);
         lv_obj_set_style_text_font(lbl_weekly_reset, L.reset_font, 0);
         lv_label_set_text(lbl_weekly_reset, buf);
     }

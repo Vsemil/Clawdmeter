@@ -37,6 +37,8 @@ struct UsageData {
     char     lang[4];        // `lg` interface language ("en", "ru"); "" = absent (keep the saved one)
     char     alert_kind[12]; // `k`  what the alert is about (alert_kind.h); "" = absent
     char     alert_project[48]; // `pj` the project it's from, UTF-8; "" = absent
+    int16_t  scoped_pct;     // `f`  the hottest model-scoped weekly limit, 0-100; -1 = absent
+    char     scoped_name[16];// `fn` its model ("Fable"); "" = absent
     bool ok;                 // data parse succeeded
     bool valid;              // false until first successful parse
 };

@@ -77,6 +77,14 @@ bool payload_parse(const char* json, UsageData* out, const char** err) {
     copy_str(d.lang, sizeof(d.lang), doc["lg"] | "");
     copy_str(d.alert_kind, sizeof(d.alert_kind), doc["k"] | "");
     copy_str(d.alert_project, sizeof(d.alert_project), doc["pj"] | "");
+    JsonVariant f = doc["f"];
+    if (f.isNull()) {
+        d.scoped_pct = -1;
+    } else {
+        int v = f | 0;
+        d.scoped_pct = (int16_t)(v < 0 ? 0 : v > 100 ? 100 : v);
+    }
+    copy_str(d.scoped_name, sizeof(d.scoped_name), doc["fn"] | "");
 
     d.ok = doc["ok"] | false;
     d.valid = true;

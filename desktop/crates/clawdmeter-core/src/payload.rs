@@ -96,12 +96,21 @@ pub struct Payload {
     /// The project the alert is from.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pj: Option<String>,
+    /// The hottest model-scoped weekly limit, % used ("Current week (Fable)").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub f: Option<u32>,
+    /// Its model's name, at most [`SCOPED_NAME_LIMIT`] characters.
+    #[serde(rename = "fn", skip_serializing_if = "Option::is_none")]
+    pub fn_: Option<String>,
 }
+
+/// The device keeps this many characters of a model name (`fn`).
+pub const SCOPED_NAME_LIMIT: usize = 12;
 
 /// Every key [`Payload`] can emit, in serialization order.
 pub const PAYLOAD_KEYS: &[&str] = &[
     "s", "sr", "w", "wr", "st", "acct", "tp", "pd", "rd", "t", "tf", "c", "ok", "b", "m", "x", "a", "e", "es", "n",
-    "rp", "lv", "aa", "lg", "k", "pj",
+    "rp", "lv", "aa", "lg", "k", "pj", "f", "fn",
 ];
 /// The fast-clock keys added in v0.4 (old firmware ignores them).
 pub const ADDITIVE_KEYS: &[&str] = &["a", "e", "es", "n", "rp"];
@@ -248,6 +257,8 @@ impl Payload {
             Some(win) => (win.pct, win.resets_at.map_or(-1, |t| minutes_until(t, now))),
             None => (0, -1),
         };
+        // Several model-scoped limits: the device shows the hottest.
+        let scoped = r.models.iter().max_by_key(|(_, win)| win.pct);
         Payload {
             s: Some(s),
             sr: Some(sr),
@@ -256,6 +267,8 @@ impl Payload {
             st: Some(st.to_owned()),
             acct: Some("pro".to_owned()),
             ok: true,
+            f: scoped.map(|(_, win)| win.pct),
+            fn_: scoped.map(|(name, _)| name.chars().take(SCOPED_NAME_LIMIT).collect()),
             ..Default::default()
         }
     }
@@ -514,6 +527,8 @@ mod tests {
             lg: Some("ru".into()),
             k: Some("done".into()),
             pj: Some("clawdmeter".into()),
+            f: Some(72),
+            fn_: Some("Fable".into()),
         };
         let v: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&pl.to_json()).unwrap();
         // serde_json's Map is sorted without preserve_order; check membership.

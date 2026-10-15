@@ -47,3 +47,5 @@ seconds) and sends `x` if the device still shows it.
 | `lg` | Interface language: `en` (the default) or `ru`, from the app's `lang` setting, on every data payload. The device stores it in NVS and restarts into a new value, so the layout is sized for that language's words; absent or unknown = keep the stored one. |
 | `k` | With `m`: what the alert is about. Claude Code's waits `permission`, `question`, `idle`, `elicitation`, `other`; and `done` (a turn of 45 s or more finished with nothing left running), `cal`, `calstart` (the calendar), `msg` (free text from outside). The device shows the kind's caption in its language, colour and melody instead of `m`; for `msg` and an unknown or absent `k` it shows `m`. |
 | `pj` | With `m`: the project the alert is from (the session's git root, else its cwd), shown after the caption. |
+| `f` | The hottest model-scoped weekly limit, % used (the endpoint's `limits[]` `weekly_scoped` entries, or `model_scoped[]`; the CLI's "Current week (Fable)"). Shown at the right of the weekly card's reset line when it fits. Absent: no such limit. |
+| `fn` | Its model's display name, at most 12 characters. |
