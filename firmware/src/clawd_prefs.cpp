@@ -1,8 +1,11 @@
 #include "clawd_prefs.h"
 #include "clawd_director.h"
 #include "clawd_policy.h"
+#include "ui_text.h"
+#include "hal/board_info_hal.h"
 #include <Preferences.h>
 #include <Arduino.h>
+#include <string.h>
 
 void clawd_prefs_init(void) {
     Preferences prefs;
@@ -42,3 +45,34 @@ void attn_anim_set(int seconds) {
 }
 
 int attn_anim_get(void) { return clawd_attn_anim(); }
+
+void lang_pref_init(void) {
+    Preferences prefs;
+    prefs.begin("clawdmeter", true);
+    char code[8] = "";
+    prefs.getString("lang", code, sizeof(code));
+    prefs.end();
+    lang_select(lang_find(code));
+    Serial.printf("Language: %s\n", S->code);
+}
+
+void lang_pref_set(const char* code) {
+    const UiText* t = lang_find(code);
+    if (!t || t == S) return;
+    Preferences prefs;
+    prefs.begin("clawdmeter", false);
+    prefs.putString("lang", t->code);
+    char back[8] = "";
+    prefs.getString("lang", back, sizeof(back));
+    prefs.end();
+    // Restart only once the choice is on flash: a failed write would
+    // otherwise restart on every payload.
+    if (strcmp(back, t->code) != 0) {
+        Serial.printf("Language %s: NVS write failed, keeping %s\n", t->code, S->code);
+        return;
+    }
+    Serial.printf("Language: %s -> %s, restarting to lay it out\n", S->code, t->code);
+    Serial.flush();
+    board_hal_restart();
+    lang_select(t);   // no restart (simulator): texts switch, the layout stays
+}

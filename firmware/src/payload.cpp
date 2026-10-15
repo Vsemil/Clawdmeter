@@ -74,6 +74,8 @@ bool payload_parse(const char* json, UsageData* out, const char** err) {
         d.attn_anim_s = (int16_t)(v < 0 ? 0 : v > 120 ? 120 : v);
     }
 
+    copy_str(d.lang, sizeof(d.lang), doc["lg"] | "");
+
     d.ok = doc["ok"] | false;
     d.valid = true;
     *out = d;

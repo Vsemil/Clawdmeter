@@ -109,6 +109,16 @@ static void test_liveliness(void) {
     TEST_ASSERT_EQUAL_INT(1, d.liveliness);
 }
 
+static void test_language(void) {
+    UsageData d;
+    TEST_ASSERT_TRUE(payload_parse("{\"ok\":true}", &d, nullptr));
+    TEST_ASSERT_EQUAL_STRING("", d.lang);          // absent: keep the saved language
+    TEST_ASSERT_TRUE(payload_parse("{\"lg\":\"ru\"}", &d, nullptr));
+    TEST_ASSERT_EQUAL_STRING("ru", d.lang);
+    TEST_ASSERT_TRUE(payload_parse("{\"lg\":\"toolong\"}", &d, nullptr));
+    TEST_ASSERT_EQUAL_STRING("too", d.lang);       // truncated, then unknown: ignored
+}
+
 static void test_long_strings_truncate(void) {
     UsageData d;
     TEST_ASSERT_TRUE(payload_parse("{\"st\":\"abcdefghijklmnopqrstuvwxyz\"}", &d, nullptr));
@@ -124,6 +134,7 @@ int main(void) {
     RUN_TEST(test_fast_clock_clamps);
     RUN_TEST(test_liveliness);
     RUN_TEST(test_attention_animation);
+    RUN_TEST(test_language);
     RUN_TEST(test_long_strings_truncate);
     return UNITY_END();
 }

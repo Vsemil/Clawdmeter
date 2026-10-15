@@ -278,6 +278,7 @@ void setup() {
     ble_init();
     input_hal_init();
 
+    lang_pref_init();   // the saved language: the layout is sized for its strings
     ui_init();
     ui_update_ble_status(ble_get_state(), ble_get_device_name(), ble_get_mac_address());
     ui_update_battery(power_hal_battery_pct(), power_hal_is_charging(), power_hal_is_vbus_in());
@@ -490,6 +491,7 @@ void loop() {
                 idle_note_activity();
             if (usage.liveliness > 0) liveliness_set(usage.liveliness);
             if (usage.attn_anim_s >= 0) attn_anim_set(usage.attn_anim_s);
+            lang_pref_set(usage.lang);   // restarts on a change
             director_on_payload(&usage, &sig);
             if (usage.alert_msg[0]) {
                 Serial.println("attention — mascot");

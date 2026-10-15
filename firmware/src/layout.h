@@ -48,9 +48,10 @@ struct Layout {
     const lv_font_t* pill_font;
     const lv_font_t* reset_font;     // "Resets in ..." line
     const lv_font_t* period_font;    // spend-capped period line (reset_font when it fits)
+    bool    reset_short;             // no room for the countdown's wording: S->reset_short
     bool    period_short;            // no room for its pace word: "Resets <date>" in the pace colour
     const lv_font_t* pace_font;
-    const char* const* pills;        // PILL_TEXT or PILL_TEXT_SHORT (ui_text.h)
+    const char* const* pills;        // S->pill or S->pill_short (ui_text.h)
 
     // Status line, centred at the bottom.
     const lv_font_t* status_font;

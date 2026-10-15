@@ -7,6 +7,7 @@
 #include <math.h>
 #include <initializer_list>
 #include "../../src/layout.cpp"
+#include "../../src/lang.cpp"
 
 struct Panel { const char* name; int16_t w, h; bool round; };
 
@@ -141,9 +142,9 @@ static void check_panel(const Panel& p) {
     if (text_w(L.ent_pct_font, "100") + 4 + text_w(L.reset_font, "%") + pill_w
         + text_w(L.pill_font, L.pills[2]) > inner_w)
         fail("spending vs pill", card(0));
-    for (const char* s : RESET_TEXT_WIDEST)
+    for (const char* s : L.reset_short ? S->reset_short_widest : S->reset_widest)
         if (text_w(L.reset_font, s) > inner_w) fail(s, card(0));
-    if (text_w(L.period_font, L.period_short ? PERIOD_TEXT_SHORT_WIDEST : PERIOD_TEXT_WIDEST) > inner_w)
+    if (text_w(L.period_font, L.period_short ? S->period_short_widest : S->period_widest) > inner_w)
         fail("period line", card(1));
     if (p.w >= 240 && L.period_short) fail("period line without its pace word", card(1));
     if (1 + 2 * L.pill_pad_y + ink_h(L.pill_font) > L.bar_y) fail("pill vs bar", card(0));
@@ -153,7 +154,7 @@ static void check_panel(const Panel& p) {
 
     // Status line: every state word fits, under the cards, on the glass.
     if (L.status_w > p.w) fail("status line wider than the panel", { 0, 0, L.status_w, 0 });
-    for (const char* s : STATUS_TEXT_REQUIRED) {
+    for (const char* s : S->status_required) {
         if (text_w(L.status_font, s) > L.status_w) fail(s, status_box(s));
         check_on_glass("status line", status_box(s));
         check_apart("status line vs cards", status_box(s), card(1));
@@ -161,12 +162,12 @@ static void check_panel(const Panel& p) {
 
     // Pairing hint: every variant's lines on the glass, apart, under the
     // header and over the status line.
-    static const char* const* const SETS[] = { PAIR_TEXT_PWR, PAIR_TEXT_TOUCH, PAIR_TEXT_CLEARED };
-    const Box status = status_box(STATUS_TEXT_REQUIRED[0]);
+    const char* const* const SETS[] = { S->pair_pwr, S->pair_touch, S->pair_cleared };
+    const Box status = status_box(S->status_required[0]);
     for (const char* const* set : SETS) {
         Box prev = { 0, 0, 0, 0 };
         for (int i = 0; i < 4; i++) {
-            const char* s = i < 3 ? set[i] : PAIR_TEXT_HOLDING;
+            const char* s = i < 3 ? set[i] : S->pair_holding;
             const lv_font_t* f = L.pair_font[i];
             int w = text_w(f, s);
             int lines = 1;
@@ -190,6 +191,14 @@ static void test_every_panel_fits(void) {
     for (const Panel& p : PANELS) check_panel(p);
 }
 
+// The same checks with the Russian table: its words are longer, so every
+// panel must fit them too (the device lays out for the language in use).
+static void test_every_panel_fits_ru(void) {
+    lang_select(&UI_TEXT_RU);
+    for (const Panel& p : PANELS) check_panel(p);
+    lang_select(&UI_TEXT_EN);
+}
+
 // The boards on main keep the layout they were tuned with.
 static void test_large_480x480(void) {
     L = layout_compute({ 480, 480, false });
@@ -210,7 +219,7 @@ static void test_large_480x480(void) {
     TEST_ASSERT_EQUAL_PTR(&font_styrene_48, L.pair_font[0]);
     TEST_ASSERT_EQUAL_INT16(100, L.pair_y);
     TEST_ASSERT_EQUAL_INT16(230, L.pair_line_y[3]);
-    TEST_ASSERT_EQUAL_PTR(PILL_TEXT, L.pills);
+    TEST_ASSERT_EQUAL_PTR(S->pill, L.pills);
 }
 
 static void test_compact_368x448(void) {
@@ -274,6 +283,7 @@ static void print_layouts(void) {
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_every_panel_fits);
+    RUN_TEST(test_every_panel_fits_ru);
     RUN_TEST(test_large_480x480);
     RUN_TEST(test_compact_368x448);
     RUN_TEST(test_large_410x502);

@@ -110,47 +110,14 @@ static const uint16_t spinner_ms[SPINNER_COUNT] = {
     260, 130, 130, 130, 130, 260,
 };
 
-static const char* const anim_messages[] = {
-    "Accomplishing", "Elucidating", "Perusing",
-    "Actioning", "Enchanting", "Philosophising",
-    "Actualizing", "Envisioning", "Pondering",
-    "Baking", "Finagling", "Pontificating",
-    "Booping", "Flibbertigibbeting", "Processing",
-    "Brewing", "Forging", "Puttering",
-    "Calculating", "Forming", "Puzzling",
-    "Cerebrating", "Frolicking", "Reticulating",
-    "Channelling", "Generating", "Ruminating",
-    "Churning", "Germinating", "Scheming",
-    "Clauding", "Hatching", "Schlepping",
-    "Coalescing", "Herding", "Shimmying",
-    "Cogitating", "Honking", "Shucking",
-    "Combobulating", "Hustling", "Simmering",
-    "Computing", "Ideating", "Smooshing",
-    "Concocting", "Imagining", "Spelunking",
-    "Conjuring", "Incubating", "Spinning",
-    "Considering", "Inferring", "Stewing",
-    "Contemplating", "Jiving", "Sussing",
-    "Cooking", "Manifesting", "Synthesizing",
-    "Crafting", "Marinating", "Thinking",
-    "Creating", "Meandering", "Tinkering",
-    "Crunching", "Moseying", "Transmuting",
-    "Deciphering", "Mulling", "Unfurling",
-    "Deliberating", "Mustering", "Unravelling",
-    "Determining", "Musing", "Vibing",
-    "Discombobulating", "Noodling", "Wandering",
-    "Divining", "Percolating", "Whirring",
-    "Doing", "Wibbling",
-    "Effecting", "Wizarding",
-    "Working", "Wrangling",
-};
-#define ANIM_MSG_COUNT (sizeof(anim_messages) / sizeof(anim_messages[0]))
+#define ANIM_MSG_COUNT ((uint8_t)S->word_count)   // the verbs: ui_text.h
 
 // The first verb from `i` on that fits the status line as "<glyph> <verb>…";
 // a narrow panel skips the long ones rather than clipping them.
 static uint8_t fitting_verb(uint8_t i) {
     for (uint8_t n = 0; n < ANIM_MSG_COUNT; n++, i = (i + 1) % ANIM_MSG_COUNT) {
         char buf[48];
-        snprintf(buf, sizeof(buf), "%s %s\xE2\x80\xA6", spinner_frames[1], anim_messages[i]);
+        snprintf(buf, sizeof(buf), "%s %s\xE2\x80\xA6", spinner_frames[1], S->words[i]);
         if (layout_text_width(L.status_font, buf) <= L.status_w) return i;
     }
     return i;
@@ -168,11 +135,11 @@ static void format_reset_time(int mins, char* buf, size_t len, const char* none)
     if (mins < 0) {
         snprintf(buf, len, "%s", none);
     } else if (mins < 60) {
-        snprintf(buf, len, "Resets in %dm", mins);
+        snprintf(buf, len, L.reset_short ? S->reset_short[0] : S->reset_m, mins);
     } else if (mins < 1440) {
-        snprintf(buf, len, "Resets in %dh %dm", mins / 60, mins % 60);
+        snprintf(buf, len, L.reset_short ? S->reset_short[1] : S->reset_hm, mins / 60, mins % 60);
     } else {
-        snprintf(buf, len, "Resets in %dd %dh", mins / 1440, (mins % 1440) / 60);
+        snprintf(buf, len, L.reset_short ? S->reset_short[2] : S->reset_dh, mins / 1440, (mins % 1440) / 60);
     }
 }
 
@@ -285,11 +252,11 @@ static lv_obj_t* make_usage_panel(lv_obj_t* parent, const LayoutRect& r, const c
 static void apply_pair_text(void) {
     if (!pair_lines[0]) return;
     const bool pwr = board_caps().has_pwr_button;
-    const char* const* lines = pwr ? PAIR_TEXT_PWR : PAIR_TEXT_TOUCH;
+    const char* const* lines = pwr ? S->pair_pwr : S->pair_touch;
     const char* note = "";
     // Only the touch hold talks back; the PWR hint stays as it is.
-    if (!pwr && pair_hint == PAIR_HINT_HOLDING) note = PAIR_TEXT_HOLDING;
-    else if (!pwr && pair_hint == PAIR_HINT_CLEARED) lines = PAIR_TEXT_CLEARED;
+    if (!pwr && pair_hint == PAIR_HINT_HOLDING) note = S->pair_holding;
+    else if (!pwr && pair_hint == PAIR_HINT_CLEARED) lines = S->pair_cleared;
     for (int i = 0; i < 3; i++) lv_label_set_text(pair_lines[i], lines[i]);
     lv_label_set_text(pair_lines[3], note);
     lv_obj_set_style_text_color(pair_lines[3], pair_hint == PAIR_HINT_NORMAL ? COL_DIM : COL_ACCENT, 0);
@@ -361,7 +328,7 @@ static void init_usage_screen(lv_obj_t* scr) {
     lv_obj_clear_flag(usage_container, LV_OBJ_FLAG_SCROLLABLE);
 
     lbl_title = lv_label_create(usage_container);
-    lv_label_set_text(lbl_title, "Usage");
+    lv_label_set_text(lbl_title, S->title);
     lv_obj_set_style_text_color(lbl_title, COL_TEXT, 0);
     apply_title_font();
 
@@ -388,7 +355,7 @@ static void init_usage_screen(lv_obj_t* scr) {
     lv_obj_add_flag(lbl_session_pct_sym, LV_OBJ_FLAG_HIDDEN);
 
     lbl_spending_desc = lv_label_create(panel_session);
-    lv_label_set_text(lbl_spending_desc, "of spending limit");
+    lv_label_set_text(lbl_spending_desc, S->of_spending_limit);
     lv_obj_set_style_text_font(lbl_spending_desc, L.reset_font, 0);
     lv_obj_set_style_text_color(lbl_spending_desc, COL_DIM, 0);
     lv_obj_set_pos(lbl_spending_desc, 0, L.reset_y);
@@ -505,7 +472,7 @@ void ui_update(const UsageData* data) {
     } else if (clock_base_epoch != 0) {   // clock turned off daemon-side → revert title to "Usage"
         clock_base_epoch = 0;
         clock_last_min = -1;
-        lv_label_set_text(lbl_title, "Usage");
+        lv_label_set_text(lbl_title, S->title);
         apply_title_font();
     }
 
@@ -530,16 +497,16 @@ void ui_update(const UsageData* data) {
         if (panel_weekly) lv_obj_clear_flag(panel_weekly, LV_OBJ_FLAG_HIDDEN);
     }
 
-    char buf[48];
+    char buf[96];   // UTF-8 Cyrillic: two bytes a letter
 
     // Pace vars used in both enterprise blocks below
-    const char* pace_text = "Under pace";
+    const char* pace_text = S->pace_under;
     lv_color_t  pace_color = COL_GREEN;
     const char* pace_hex   = "788c5d";   // matches THEME_GREEN
     if (data->session_pct > (float)data->time_pct + 15.0f) {
-        pace_text = "Over pace";  pace_color = COL_RED;   pace_hex = "c0392b";
+        pace_text = S->pace_over;  pace_color = COL_RED;   pace_hex = "c0392b";
     } else if (data->session_pct > (float)data->time_pct - 15.0f) {
-        pace_text = "On pace";    pace_color = COL_AMBER; pace_hex = "d97757";
+        pace_text = S->pace_on;  pace_color = COL_AMBER; pace_hex = "d97757";
     }
 
     if (data->enterprise) {
@@ -548,7 +515,7 @@ void ui_update(const UsageData* data) {
                         LV_ALIGN_OUT_RIGHT_TOP, 4, 12);
     } else {
         lv_label_set_text_fmt(lbl_session_pct, "%d%%", s_pct);
-        format_reset_time(data->session_reset_mins, buf, sizeof(buf), "Not started");
+        format_reset_time(data->session_reset_mins, buf, sizeof(buf), S->not_started);
         lv_label_set_text(lbl_session_reset, buf);
     }
 
@@ -564,11 +531,12 @@ void ui_update(const UsageData* data) {
                               (data->session_pct <= (float)data->time_pct + 15.0f) ? COL_AMBER :
                               COL_RED;
         lv_obj_set_style_bg_color(bar_weekly, bar_pace, LV_PART_INDICATOR);
+        char resets[40];
+        snprintf(resets, sizeof(resets), S->resets_on, data->reset_date);
         if (L.period_short)
-            snprintf(buf, sizeof(buf), "#%s Resets %s#", pace_hex, data->reset_date);
+            snprintf(buf, sizeof(buf), "#%s %s#", pace_hex, resets);
         else
-            snprintf(buf, sizeof(buf), "#%s %s# - #faf9f5 Resets %s#",
-                     pace_hex, pace_text, data->reset_date);
+            snprintf(buf, sizeof(buf), "#%s %s# - #faf9f5 %s#", pace_hex, pace_text, resets);
         lv_obj_set_style_text_font(lbl_weekly_reset, L.period_font, 0);
         lv_label_set_text(lbl_weekly_reset, buf);
     } else {
@@ -646,8 +614,8 @@ void ui_tick_anim(void) {
 
     if (still) {
         // One glyph, one word per state; redrawn only when it changes.
-        const char* text = !s_ble_connected ? "Waiting"
-                         : view_state == 1 ? (data_received ? "Stale" : "No data") : "Connected";
+        const char* text = !s_ble_connected ? S->st_waiting
+                         : view_state == 1 ? (data_received ? S->st_stale : S->st_no_data) : S->st_connected;
         if (text != still_shown) {
             still_shown = text;
             static char sbuf[40];
@@ -681,13 +649,13 @@ void ui_tick_anim(void) {
     // Status text by priority. Whimsical messages only when connected & settled.
     const char* text;
     if (!s_ble_connected) {
-        text = "Waiting";              // advertising / waiting for a host connection
+        text = S->st_waiting;           // advertising / waiting for a host connection
     } else if (view_state == 1) {      // stale — alternate so it reads as alive AND not live
-        text = (anim_msg_idx & 1) ? (data_received ? "Stale" : "No data") : "Listening";
+        text = (anim_msg_idx & 1) ? (data_received ? S->st_stale : S->st_no_data) : S->st_listening;
     } else if (now - connected_at_ms < 5000) {
-        text = "Connected";
+        text = S->st_connected;
     } else {
-        text = anim_messages[anim_verb_idx];
+        text = S->words[anim_verb_idx];
     }
 
     if (!tune.spinner) {

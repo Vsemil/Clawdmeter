@@ -8,3 +8,7 @@
 // revision or can't tell). Valid after board_init(). Must be a static string.
 //   waveshare_amoled_18: "sh8601_ft3168" | "co5300_cst816"
 const char* board_hal_rev(void);
+
+// Restart the device (a language change re-lays out the UI from boot). The
+// shared default restarts the ESP32; the simulator has nothing to restart.
+void board_hal_restart(void);

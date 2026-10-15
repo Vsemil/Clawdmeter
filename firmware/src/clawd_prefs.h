@@ -10,3 +10,8 @@ void liveliness_set(int level);       // apply; saved only when it changes
 int  liveliness_get(void);
 void attn_anim_set(int seconds);      // apply; saved only when it changes
 int  attn_anim_get(void);
+
+// The interface language (`lg`, ui_text.h). The layout is sized for one
+// language at boot, so a change is saved and the device restarts into it.
+void lang_pref_init(void);            // before ui_init(): select the saved table
+void lang_pref_set(const char* code); // "" or unknown: no change

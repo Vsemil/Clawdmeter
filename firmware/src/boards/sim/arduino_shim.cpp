@@ -67,6 +67,26 @@ SimSerial Serial;
 // ---- Preferences: tiny in-memory key/value store ----
 #define PREF_SLOTS 16
 static struct { char key[16]; uint8_t val; bool used; } store[PREF_SLOTS];
+static struct { char key[16]; char val[32]; bool used; } str_store[PREF_SLOTS];
+
+size_t Preferences::getString(const char* key, char* value, size_t max_len) {
+    for (auto& s : str_store)
+        if (s.used && strcmp(s.key, key) == 0) {
+            snprintf(value, max_len, "%s", s.val);
+            return strlen(value);
+        }
+    return 0;   // absent: the buffer keeps its default, like NVS
+}
+size_t Preferences::putString(const char* key, const char* value) {
+    for (auto& s : str_store)
+        if (!s.used || strcmp(s.key, key) == 0) {
+            s.used = true;
+            snprintf(s.key, sizeof(s.key), "%s", key);
+            snprintf(s.val, sizeof(s.val), "%s", value);
+            return strlen(s.val);
+        }
+    return 0;
+}
 
 uint8_t Preferences::getUChar(const char* key, uint8_t def) {
     for (auto& s : store)

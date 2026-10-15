@@ -13,4 +13,7 @@ public:
     void end(void) {}
     uint8_t getUChar(const char* key, uint8_t def = 0);
     size_t  putUChar(const char* key, uint8_t value);
+    // Char-buffer string overloads only (no Arduino String in the sim).
+    size_t  getString(const char* key, char* value, size_t max_len);
+    size_t  putString(const char* key, const char* value);
 };

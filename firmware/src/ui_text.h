@@ -1,30 +1,79 @@
 #pragma once
 
-// Copy on the meters whose width decides the layout: ui.cpp draws these
-// strings and layout.cpp sizes the screen for the widest of them, so a
-// rewording here is checked by test_layout on every panel size.
+// Every phrase the device shows, one table per language (lang.cpp). The app
+// picks the language with the payload's `lg` key; the device keeps it in NVS
+// and restarts to apply it (clawd_prefs.cpp), so ui.cpp and layout.cpp only
+// ever see one table: `S`, fixed for the life of the program.
+//
+// The copy on the meters decides the layout: layout.cpp sizes the screen for
+// the widest of the strings marked "widest" below, so a rewording in either
+// language is checked by test_layout on every panel size.
 
-// Pairing hint: heading, two steps, and a note line, per board kind / state
-// (ui.cpp apply_pair_text).
-static const char* const PAIR_TEXT_PWR[3]     = { "To pair", "hold the power button", "for 3 seconds, then release" };
-static const char* const PAIR_TEXT_TOUCH[3]   = { "To pair", "touch and hold here", "for 5 seconds" };
-static const char* const PAIR_TEXT_CLEARED[3] = { "Ready to pair", "choose Clawdmeter", "on your computer" };
-static const char* const PAIR_TEXT_HOLDING    = "keep holding...";
+struct UiText {
+    const char* code;              // "en", "ru": the `lg` value that picks it
 
-// Card pills: session, weekly, then the spend-capped account's spending and
-// period. The short set is for panels too narrow for the long one.
-static const char* const PILL_TEXT[4]       = { "Session", "Weekly", "Spending", "Period" };
-static const char* const PILL_TEXT_SHORT[4] = { "5h", "7d", "Spend", "Period" };
+    const char* title;             // usage view header while there's no clock
 
-// Widest text a card's reset line shows: the weekly window's last day, the
-// spend-capped account's caption, and its period line (its widest pace word and date).
-static const char* const RESET_TEXT_WIDEST[] = { "Resets in 23h 59m", "Resets in 6d 23h", "of spending limit" };
-#define PERIOD_TEXT_WIDEST "Under pace - Resets May 30"
-#define PERIOD_TEXT_SHORT_WIDEST "Resets May 30"   // where no size fits the pace word too
+    // Pairing hint: heading, two steps, and a note line, per board kind /
+    // state (ui.cpp apply_pair_text).
+    const char* pair_pwr[3];
+    const char* pair_touch[3];
+    const char* pair_cleared[3];
+    const char* pair_holding;
 
-// Status-line words every panel must fit (the whimsical verbs are skipped
-// when they don't): "<spinner> <word>…".
-static const char* const STATUS_TEXT_REQUIRED[] = {
-    "\xE2\x9C\xBB Connected\xE2\x80\xA6", "\xE2\x9C\xBB Listening\xE2\x80\xA6",
-    "\xE2\x9C\xBB Waiting\xE2\x80\xA6",   "\xE2\x9C\xBB No data\xE2\x80\xA6",
+    // Card pills: session, weekly, then the spend-capped account's spending
+    // and period. The short set is for panels too narrow for the long one.
+    const char* pill[4];
+    const char* pill_short[4];
+
+    // Reset line: "Resets in" countdown formats (minutes; hours + minutes;
+    // days + hours) and what a missing session reset means.
+    const char* reset_m;
+    const char* reset_hm;
+    const char* reset_dh;
+    const char* not_started;
+    // The same countdown worded shorter, for panels too narrow for it.
+    const char* reset_short[3];    // m, h m, d h
+
+    // Spend-capped account: caption under the number, pace words, and the
+    // period line's "Resets <date>".
+    const char* of_spending_limit;
+    const char* pace_under;
+    const char* pace_on;
+    const char* pace_over;
+    const char* resets_on;         // "Resets %s"
+
+    // Widest text a card's reset line shows: the weekly window's last day,
+    // the spend-capped account's caption, and its period line (its widest
+    // pace word and date), with and without the pace word.
+    const char* reset_widest[3];
+    const char* reset_short_widest[3];
+    const char* period_widest;
+    const char* period_short_widest;
+
+    // Status-line states.
+    const char* st_waiting;        // advertising, no host
+    const char* st_listening;      // connected, between payloads
+    const char* st_connected;
+    const char* st_no_data;
+    const char* st_stale;
+
+    // Status-line words every panel must fit (the whimsical verbs are
+    // skipped when they don't): "<spinner> <word>…".
+    const char* status_required[5];
+
+    // The whimsical verbs, Claude Code's spinner words.
+    const char* const* words;
+    int word_count;
 };
+
+extern const UiText UI_TEXT_EN;
+extern const UiText UI_TEXT_RU;
+
+// The table in use. English until lang_select() picks another.
+extern const UiText* S;
+
+// The table for a `lg` code, nullptr for "" or an unknown code.
+const UiText* lang_find(const char* code);
+// Make `t` the table in use (null keeps the current one).
+void lang_select(const UiText* t);

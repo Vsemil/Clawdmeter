@@ -200,7 +200,7 @@ static void place_cards(Layout& L, const Design& d, int16_t x, int16_t w, int16_
     L.pct_font = d.pct;          L.ent_pct_font = d.ent_pct;
     L.pill_font = d.pill;        L.reset_font = d.reset;
     L.pace_font = d.pace;
-    L.pills = PILL_TEXT;
+    L.pills = S->pill;
 }
 
 // Both cards' rows fit: the percentage beside its pill (the spend-capped
@@ -213,8 +213,9 @@ static bool cards_fit(const Layout& L) {
     const int16_t spend = layout_text_width(L.ent_pct_font, "100") + 4
                         + layout_text_width(L.reset_font, "%") + pill
                         + layout_text_width(L.pill_font, L.pills[2]);
-    const int n = sizeof(RESET_TEXT_WIDEST) / sizeof(RESET_TEXT_WIDEST[0]);
-    return usage <= inner && spend <= inner && widest(L.reset_font, RESET_TEXT_WIDEST, n) <= inner;
+    const int n = sizeof(S->reset_widest) / sizeof(S->reset_widest[0]);
+    const char* const* resets = L.reset_short ? S->reset_short_widest : S->reset_widest;
+    return usage <= inner && spend <= inner && widest(L.reset_font, resets, n) <= inner;
 }
 
 // Title fonts: per clock format, the largest that fits between the logo
@@ -240,7 +241,7 @@ static void fit_title(Layout& L, const Chrome& c) {
 // Lines `text` wraps to at width `w`, breaking at spaces like LVGL.
 static int wrapped_lines(const lv_font_t* f, const char* text, int16_t w) {
     if (layout_text_width(f, text) <= w) return 1;
-    char line[64] = "", word[32];
+    char line[128] = "", word[64];   // UTF-8: Cyrillic is two bytes a letter
     int lines = 1;
     for (const char* p = text; *p;) {
         int n = 0;
@@ -248,7 +249,7 @@ static int wrapped_lines(const lv_font_t* f, const char* text, int16_t w) {
         while (*p && *p != ' ' && n < (int)sizeof(word) - 1) word[n++] = *p++;
         word[n] = 0;
         if (!n) break;
-        char next[64];
+        char next[128];
         snprintf(next, sizeof(next), line[0] ? "%s %s" : "%s%s", line, word);
         if (line[0] && layout_text_width(f, next) > w) {
             lines++;
@@ -266,7 +267,7 @@ static int wrapped_lines(const lv_font_t* f, const char* text, int16_t w) {
 // offsets below the first card's top, lower where a wrapped line above
 // needs the room.
 static void fit_pairing(Layout& L, const Design& d) {
-    static const char* const* const SETS[] = { PAIR_TEXT_PWR, PAIR_TEXT_TOUCH, PAIR_TEXT_CLEARED };
+    const char* const* const SETS[] = { S->pair_pwr, S->pair_touch, S->pair_cleared };
     int t = 0;
     for (; t + 2 < TEXT_FONT_COUNT; t++) {
         int16_t w = 0;
@@ -285,7 +286,7 @@ static void fit_pairing(Layout& L, const Design& d) {
     for (int i = 0; i < 4; i++) {
         int lines = 1;
         for (const char* const* s : SETS) {
-            const int n = wrapped_lines(L.pair_font[i], i < 3 ? s[i] : PAIR_TEXT_HOLDING, L.pair_w);
+            const int n = wrapped_lines(L.pair_font[i], i < 3 ? s[i] : S->pair_holding, L.pair_w);
             if (n > lines) lines = n;
         }
         if (lines > 1) L.pair_wrap = true;
@@ -305,7 +306,7 @@ static void fit_period(Layout& L) {
     for (const lv_font_t* f : TEXT_FONTS) {
         if (line_h(f) > line_h(L.reset_font)) continue;
         L.period_font = f;
-        if (layout_text_width(f, PERIOD_TEXT_WIDEST) <= inner) return;
+        if (layout_text_width(f, S->period_widest) <= inner) return;
     }
     L.period_short = true;
     L.period_font = L.reset_font;
@@ -333,7 +334,7 @@ static bool place_flow(Layout& L, const Design& d, const Chrome** chrome) {
 // numbers.
 static void fit_narrow(Layout& L) {
     if (cards_fit(L)) return;
-    L.pills = PILL_TEXT_SHORT;
+    L.pills = S->pill_short;
     if (cards_fit(L)) return;
     const int16_t m = 6;
     L.logo_x = m;
@@ -349,6 +350,8 @@ static void fit_narrow(Layout& L) {
     if (cards_fit(L)) return;
     L.pct_font = &font_styrene_20;
     L.ent_pct_font = &font_styrene_20;
+    if (cards_fit(L)) return;
+    L.reset_short = true;          // a language whose countdown runs long
 }
 
 static int16_t card_gap(const Layout& L) { return L.card[1].y - (L.card[0].y + L.card[0].h); }
@@ -432,9 +435,9 @@ static bool place_round_with(Layout& L, const Design& d, const Chrome& c) {
     L.status_w = 2 * (chord_half(cy, r, s_top, s_bottom) - ROUND_INSET);
     L.pair_w = L.card[0].w;
 
-    const int n = sizeof(STATUS_TEXT_REQUIRED) / sizeof(STATUS_TEXT_REQUIRED[0]);
+    const int n = sizeof(S->status_required) / sizeof(S->status_required[0]);
     return y >= 0 && room >= widest_clock(TITLE_FONTS[c.title_font], false) && cards_fit(L)
-        && widest(c.status_font, STATUS_TEXT_REQUIRED, n) <= L.status_w;
+        && widest(c.status_font, S->status_required, n) <= L.status_w;
 }
 
 // The design's own chrome, else the small one: the circle's top and bottom
