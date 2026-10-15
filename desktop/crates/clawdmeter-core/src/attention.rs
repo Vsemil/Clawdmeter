@@ -33,7 +33,7 @@ pub const ALERT_TTL: Duration = Duration::from_secs(2 * 60);
 pub const TEST_ALERT_TTL: Duration = Duration::from_secs(30);
 /// The session id of the Hooks page's test alert.
 pub const TEST_SESSION: &str = "clawdmeter-test";
-/// Device fonts are ASCII and the status line holds this many characters.
+/// The device's message buffer holds this many UTF-8 bytes.
 pub const MESSAGE_LIMIT: usize = 120;
 
 /// What a session is waiting for. The hook records it (`k`) from Claude
@@ -104,7 +104,7 @@ impl AlertKind {
 /// One alert read from the attention file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Alert {
-    /// ASCII-folded message (may be empty).
+    /// Message folded to the device's glyphs (may be empty).
     pub message: String,
     /// Claude Code session id (may be empty).
     pub session: String,
@@ -126,18 +126,36 @@ impl Alert {
     }
 }
 
-/// Fold to ASCII (drop accents), collapse whitespace, cap at `limit` chars
-/// with a `...` suffix.
-pub fn to_ascii(text: &str, limit: usize) -> String {
-    let folded: String = text.nfkd().filter(char::is_ascii).collect();
+/// A character the device's fonts draw as is: ASCII, Russian Cyrillic and
+/// the few marks its Cyrillic companions add (`tools/gen_cyr_fonts.sh`).
+fn device_glyph(c: char) -> bool {
+    c.is_ascii() || matches!(c, '\u{410}'..='\u{44F}' | 'Ё' | 'ё' | '«' | '»' | '—' | '№')
+}
+
+/// Fold to the device's glyphs (anything else loses its accents, or is
+/// dropped), collapse whitespace, cap at `limit` UTF-8 bytes with a `...`
+/// suffix, never splitting a character.
+pub fn to_device_text(text: &str, limit: usize) -> String {
+    // Per character, so "й" stays whole: NFKD would split it into "и" + breve.
+    let mut folded = String::with_capacity(text.len());
+    for c in text.chars() {
+        if device_glyph(c) {
+            folded.push(c);
+        } else {
+            folded.extend(c.nfkd().filter(char::is_ascii));
+        }
+    }
     let collapsed = folded.split_whitespace().collect::<Vec<_>>().join(" ");
     if collapsed.len() <= limit {
-        collapsed
-    } else {
-        let mut cut = collapsed[..limit.saturating_sub(3)].trim_end().to_owned();
-        cut.push_str("...");
-        cut
+        return collapsed;
     }
+    let mut end = limit.saturating_sub(3);
+    while !collapsed.is_char_boundary(end) {
+        end -= 1;
+    }
+    let mut cut = collapsed[..end].trim_end().to_owned();
+    cut.push_str("...");
+    cut
 }
 
 /// Reads and consumes the hook's files in one directory.
@@ -177,7 +195,7 @@ impl AttentionInbox {
             Some(other) => other.to_string(),
         };
         let kind = AlertKind::parse(v.get("k").and_then(|k| k.as_str()));
-        Some(Alert { message: to_ascii(&field("m"), MESSAGE_LIMIT), session: field("s"), kind, at: mtime })
+        Some(Alert { message: to_device_text(&field("m"), MESSAGE_LIMIT), session: field("s"), kind, at: mtime })
     }
 
     /// Consume every `clear-<sid>` file: `{sid: mtime}`.
@@ -344,7 +362,10 @@ mod tests {
         fs::write(d.join("attention"), r#"{"m": "Você  aprova\na ação?", "s": "abc"}"#).unwrap();
         let a = inbox.take_alert(SystemTime::now()).unwrap();
         assert_eq!((a.message.as_str(), a.session.as_str()), ("Voce aprova a acao?", "abc"));
-        assert_eq!(to_ascii(&"x".repeat(200), 120), "x".repeat(117) + "...");
+        assert_eq!(to_device_text(&"x".repeat(200), 120), "x".repeat(117) + "...");
+        assert_eq!(to_device_text("Нужно  разрешение: «Йод» — ок", 120), "Нужно разрешение: «Йод» — ок");
+        let long = to_device_text(&"ж".repeat(100), 120);
+        assert!(long.len() <= 120 && long.ends_with("..."), "capped on a char boundary");
 
         File::create(d.join("attention")).unwrap();
         set_mtime(&d.join("attention"), SystemTime::now() - ATTENTION_MAX_AGE - Duration::from_secs(1));

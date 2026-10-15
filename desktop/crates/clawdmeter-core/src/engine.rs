@@ -11,7 +11,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use crate::attention::{Alert, AttentionState};
 use crate::backoff::SavedBlock;
 use crate::cadence::{heartbeat_due, AccountClock, Cadence, PollReason, Scheduler};
-use crate::config::Settings;
+use crate::config::{Lang, Settings};
 use crate::events::{Activity, HookEvent, Signal};
 use crate::payload::{clock_fields, Payload};
 use crate::probe::{self, Plan as ProbePlan, Source};
@@ -143,6 +143,8 @@ pub struct Engine {
     sent_lv: Option<u8>,
     /// The attention animation the device last got (`aa`).
     sent_aa: Option<u16>,
+    /// The language the device last got (`lg`).
+    sent_lg: Option<Lang>,
     last_event_ts: Option<i64>,
     /// Latest prompt or tool activity that names no configured account.
     unattributed_activity: Option<i64>,
@@ -180,6 +182,7 @@ impl Engine {
             sent_n: None,
             sent_lv: None,
             sent_aa: None,
+            sent_lg: None,
             last_event_ts: None,
             unattributed_activity: None,
             claude_found: true,
@@ -460,7 +463,9 @@ impl Engine {
         let n_changed = hooks && self.sent_n != Some(sessions);
         // A new liveliness or attention animation goes out right away, like an event.
         let aa = self.settings.attention_anim.seconds();
-        let prefs_changed = self.sent_lv != Some(self.settings.liveliness) || self.sent_aa != Some(aa);
+        let prefs_changed = self.sent_lv != Some(self.settings.liveliness)
+            || self.sent_aa != Some(aa)
+            || self.sent_lg != Some(self.settings.lang);
 
         let (mut payload, kind) = if self.logged_out {
             if !(self.fresh_poll || self.attention.pending()) {
@@ -497,6 +502,7 @@ impl Engine {
             }
             p.lv = Some(self.settings.liveliness);
             p.aa = Some(aa);
+            p.lg = Some(self.settings.lang.code().to_owned());
             (p, kind)
         };
 
@@ -545,6 +551,9 @@ impl Engine {
         }
         if let Some(aa) = w.payload.aa {
             self.sent_aa = Some(aa);
+        }
+        if let Some(lg) = &w.payload.lg {
+            self.sent_lg = Some(Lang::parse(lg));
         }
     }
 
@@ -639,7 +648,7 @@ mod tests {
         assert_eq!(w.kind, WriteKind::Poll);
         assert_eq!(
             w.payload.to_json(),
-            r#"{"s":15,"sr":60,"w":10,"wr":1440,"st":"allowed","acct":"pro","ok":true,"lv":3,"aa":120}"#
+            r#"{"s":15,"sr":60,"w":10,"wr":1440,"st":"allowed","acct":"pro","ok":true,"lv":3,"aa":120,"lg":"en"}"#
         );
         assert!(write(&mut e, T0 + 1).is_none());
     }
@@ -656,7 +665,7 @@ mod tests {
         assert_eq!(hb.kind, WriteKind::Heartbeat);
         assert_eq!(
             hb.payload.to_json(),
-            r#"{"s":15,"sr":55,"w":10,"wr":1435,"st":"allowed","acct":"pro","c":1,"ok":true,"rp":1,"lv":3,"aa":120}"#
+            r#"{"s":15,"sr":55,"w":10,"wr":1435,"st":"allowed","acct":"pro","c":1,"ok":true,"rp":1,"lv":3,"aa":120,"lg":"en"}"#
         );
         // Three misses: stale, heartbeats stop so the device's freshness lapses.
         for i in 1..=3 {
@@ -1126,6 +1135,19 @@ mod tests {
         assert!(write(&mut e, T0 + 3).is_none());
         e.on_connected();
         assert_eq!(write(&mut e, T0 + 4).unwrap().payload.lv, Some(1), "resent on a reconnect");
+    }
+
+    #[test]
+    fn language_goes_out_with_the_data_and_when_it_changes() {
+        let mut e = Engine::new(settings(""));
+        e.on_poll_results(T0, vec![(PathBuf::from("/h/.claude"), Ok(reading(15)))]);
+        let w = write(&mut e, T0).unwrap();
+        assert_eq!(w.payload.lg.as_deref(), Some("en"), "every data payload carries it");
+        assert!(write(&mut e, T0 + 1).is_none(), "nothing new");
+        e.update_settings(settings("lang = ru\n"));
+        let w = write(&mut e, T0 + 2).expect("a new language is sent right away");
+        assert_eq!((w.kind, w.payload.lg.as_deref()), (WriteKind::Event, Some("ru")));
+        assert!(write(&mut e, T0 + 3).is_none());
     }
 
     #[test]

@@ -179,6 +179,46 @@ impl ClockMode {
     }
 }
 
+/// `lang`: the device's interface language (`lg`). The device keeps it and
+/// restarts into it, so its layout fits that language's words.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Lang {
+    /// English (default).
+    #[default]
+    En,
+    /// Russian.
+    Ru,
+}
+
+impl Lang {
+    /// Every language, in the order the Device page shows them.
+    pub const ALL: [Lang; 2] = [Lang::En, Lang::Ru];
+
+    /// Parse a config value; anything unknown is English.
+    pub fn parse(v: &str) -> Self {
+        match v.trim().to_ascii_lowercase().as_str() {
+            "ru" => Lang::Ru,
+            _ => Lang::En,
+        }
+    }
+
+    /// The config-file spelling and the payload's `lg`.
+    pub fn code(self) -> &'static str {
+        match self {
+            Lang::En => "en",
+            Lang::Ru => "ru",
+        }
+    }
+
+    /// The Device page's label, in the language itself.
+    pub fn label(self) -> &'static str {
+        match self {
+            Lang::En => "English",
+            Lang::Ru => "Русский",
+        }
+    }
+}
+
 /// `attention_anim`: how long Clawd points and waves on the device when
 /// Claude needs you. Only his animation: the alert itself is unchanged.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -264,6 +304,8 @@ pub struct Settings {
     pub liveliness: u8,
     /// How long Clawd points and waves for an alert (`aa`, default 2m).
     pub attention_anim: AttentionAnim,
+    /// The device's interface language (`lg`, default English).
+    pub lang: Lang,
 }
 
 /// `alert_on`: the alert kinds that show, as a comma list of `permission`,
@@ -391,6 +433,7 @@ impl Settings {
             alert_on: cfg.get("alert_on").map(AlertOn::parse).unwrap_or_default(),
             liveliness: cfg.get("liveliness").map(parse_liveliness).unwrap_or(DEFAULT_LIVELINESS),
             attention_anim: cfg.get("attention_anim").map(AttentionAnim::parse).unwrap_or_default(),
+            lang: cfg.get("lang").map(Lang::parse).unwrap_or_default(),
         }
     }
 
@@ -479,6 +522,9 @@ impl Settings {
         }
         if current.attention_anim != self.attention_anim {
             cfg.set("attention_anim", self.attention_anim.as_str());
+        }
+        if current.lang != self.lang {
+            cfg.set("lang", self.lang.code());
         }
     }
 }
@@ -607,6 +653,14 @@ mod tests {
         assert_eq!(settings("").release_repo, DEFAULT_RELEASE_REPO);
         assert_eq!(settings("release_repo = me/fork").release_repo, "me/fork");
         assert_eq!(settings("release_repo = nonsense").release_repo, DEFAULT_RELEASE_REPO);
+    }
+
+    #[test]
+    fn lang() {
+        assert_eq!(settings("").lang, Lang::En);
+        assert_eq!(settings("lang = ru\n").lang, Lang::Ru);
+        assert_eq!(settings("lang = RU\n").lang, Lang::Ru);
+        assert_eq!(settings("lang = klingon\n").lang, Lang::En);
     }
 
     #[test]

@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use clawdmeter_core::autostart::{self, LaunchMode};
-use clawdmeter_core::config::{AlertOn, AttentionAnim, ClockMode, ConfigFile, LIVELINESS_MAX};
+use clawdmeter_core::config::{AlertOn, AttentionAnim, ClockMode, ConfigFile, Lang, LIVELINESS_MAX};
 use clawdmeter_core::{Paths, Settings};
 use clawdmeter_flash::device::{self, FirmwareInfo};
 use gpui::{div, img, prelude::*, px, Context, EventEmitter, PathPromptOptions, SharedString, Window};
@@ -616,6 +616,25 @@ impl SettingsView {
                 move |a, _, cx| {
                     let _ = me.update(cx, |v, cx| {
                         v.save(|s, _| s.attention_anim = a);
+                        cx.notify();
+                    });
+                },
+            ),
+        ));
+        let me = cx.entity().downgrade();
+        pane = pane.child(field(
+            t,
+            "Language",
+            "The device's interface language. It restarts once to lay out the new words.",
+            segmented(
+                t,
+                "device-lang",
+                &Lang::ALL.map(|l| (l, l.label())),
+                &self.settings.lang,
+                true,
+                move |l, _, cx| {
+                    let _ = me.update(cx, |v, cx| {
+                        v.save(|s, _| s.lang = l);
                         cx.notify();
                     });
                 },

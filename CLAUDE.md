@@ -89,6 +89,8 @@ The app writes one complete JSON object per write to RX
   (attention animation seconds: 120, 30, 10, 0 = off; only his animation,
   not the alert). The device keeps both in NVS (`clawd_prefs.cpp`) so they
   apply from boot.
+- Interface language, on every data payload: `lg` (`en`/`ru`). Kept in NVS
+  too; a change restarts the device so the layout fits the new words.
 - Device → app: `0x01` on REQ (`…-0004`) when it has no data yet;
   `{"dismiss":true}` on TX (`…-0003`) when a tap or the 2-minute timeout ends
   an alert. The app clears its own alert and doesn't echo a clear back. Alerts
