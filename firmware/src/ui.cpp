@@ -140,9 +140,7 @@ static const char* stale_text(void) {
 // Claude isn't working: the hooks are in, the last hook event wasn't a
 // prompt (a turn running) and there were no tool calls in the last minute.
 // Without hooks nothing is known, and the line keeps its verbs.
-static bool claude_resting(void) {
-    return signals_hooks_seen() && signals_activity() <= 0 && signals_last_event() != 'p';
-}
+static bool claude_resting(void) { return signals_resting(); }
 
 static lv_color_t pct_color(float pct) {
     if (pct >= 80.0f) return COL_RED;

@@ -126,6 +126,25 @@ static void test_limit_thresholds(void) {
     TEST_ASSERT_EQUAL_INT(0, signals_ingest_at(&d, 8000).limit_crossed);      // no-data didn't reset it
 }
 
+// Resting: hooks in, no turn running (last event not a prompt), no tool
+// calls lately. Unknown (no hooks) is never resting.
+static void test_resting(void) {
+    UsageData d = parse("{\"s\":10,\"ok\":true}");
+    signals_ingest_at(&d, 1000);
+    TEST_ASSERT_FALSE(signals_resting_at(1000));                  // no hooks: unknown
+    d = parse("{\"s\":10,\"ok\":true,\"a\":0,\"e\":\"p\",\"es\":1}");
+    signals_ingest_at(&d, 2000);
+    d = parse("{\"s\":10,\"ok\":true,\"a\":0,\"e\":\"p\",\"es\":2}");
+    signals_ingest_at(&d, 3000);
+    TEST_ASSERT_FALSE(signals_resting_at(3000));                  // a turn is running
+    d = parse("{\"s\":10,\"ok\":true,\"a\":2,\"e\":\"s\",\"es\":3}");
+    signals_ingest_at(&d, 4000);
+    TEST_ASSERT_FALSE(signals_resting_at(4000));                  // stopped, tools still busy
+    d = parse("{\"s\":10,\"ok\":true,\"a\":0}");
+    signals_ingest_at(&d, 5000);
+    TEST_ASSERT_TRUE(signals_resting_at(5000));
+}
+
 static void test_sessions_change(void) {
     UsageData d = parse("{\"n\":2}");
     TEST_ASSERT_TRUE(signals_ingest_at(&d, 1000).sessions_changed);
@@ -148,5 +167,6 @@ int main(void) {
     RUN_TEST(test_no_data_beat_is_not_a_sample);
     RUN_TEST(test_sessions_change);
     RUN_TEST(test_limit_thresholds);
+    RUN_TEST(test_resting);
     return UNITY_END();
 }

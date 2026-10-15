@@ -4,6 +4,10 @@
 void idle_init(void);
 void idle_tick(void);
 void idle_note_activity(void);
+// Whether Claude is resting now (signals_resting), every loop: after
+// CLAUDE_IDLE_SLEEP_MS of it with no touches, buttons or alerts the screen
+// goes dark even on USB; Claude working again wakes it.
+void idle_set_claude_resting(bool resting);
 
 // Set the "awake" brightness target (0..255). idle owns display brightness
 // (it fades between this and 0), so user brightness control routes through

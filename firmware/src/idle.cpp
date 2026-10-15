@@ -13,6 +13,9 @@ enum IdleState {
 
 static IdleState state = STATE_AWAKE;
 static uint32_t last_activity_ms = 0;
+static uint32_t last_touch_ms = 0;      // a person or an alert, not USB power
+static bool     claude_resting = false;
+static uint32_t claude_rest_since = 0;
 static uint32_t fade_started_ms  = 0;
 static uint32_t fade_last_step_ms = 0;
 static uint8_t  fade_from = DISPLAY_DEFAULT_BRIGHTNESS;
@@ -33,6 +36,7 @@ static void begin_fade(uint8_t to, uint32_t now) {
 void idle_init(void) {
     state = STATE_AWAKE;
     last_activity_ms = millis();
+    last_touch_ms = last_activity_ms;
     apply_brightness(awake_brightness);
 }
 
@@ -43,8 +47,28 @@ void idle_set_awake_brightness(uint8_t level) {
     if (state == STATE_AWAKE) apply_brightness(level);
 }
 
+// Claude has rested long enough, and nobody has been at the device.
+static bool claude_dark(uint32_t now) {
+    return claude_resting && now - claude_rest_since >= CLAUDE_IDLE_SLEEP_MS &&
+           now - last_touch_ms >= CLAUDE_IDLE_SLEEP_MS;
+}
+
+void idle_set_claude_resting(bool resting) {
+    const uint32_t now = millis();
+    if (resting && !claude_resting) claude_rest_since = now;
+    const bool woke = claude_resting && !resting;
+    claude_resting = resting;
+    // Claude is working again: a panel he darkened lights up.
+    if (woke && (state == STATE_ASLEEP || state == STATE_FADING_OUT)) {
+        last_activity_ms = now;
+        begin_fade(awake_brightness, now);
+        state = STATE_FADING_IN;
+    }
+}
+
 void idle_note_activity(void) {
     last_activity_ms = millis();
+    last_touch_ms = last_activity_ms;
     if (state == STATE_FADING_IN) return;
     if (state == STATE_AWAKE) return;
     // Asleep/fading-out shouldn't reach here in normal flow (callers gate via
@@ -54,6 +78,7 @@ void idle_note_activity(void) {
 }
 
 bool idle_consume_wake_press(void) {
+    last_touch_ms = millis();
     if (state == STATE_ASLEEP || state == STATE_FADING_OUT) {
         uint32_t now = millis();
         last_activity_ms = now;
@@ -80,7 +105,8 @@ void idle_tick(void) {
 
     // While on USB power (if configured), don't sleep — and wake from sleep
     // when power comes back. Treats USB-in as continuous activity.
-    if (!IDLE_SLEEP_WHEN_CHARGING && power_hal_is_vbus_in()) {
+    const bool dark = claude_dark(now);
+    if (!IDLE_SLEEP_WHEN_CHARGING && power_hal_is_vbus_in() && !dark) {
         last_activity_ms = now;
         if (state == STATE_ASLEEP || state == STATE_FADING_OUT) {
             begin_fade(awake_brightness, now);
@@ -90,7 +116,8 @@ void idle_tick(void) {
 
     switch (state) {
     case STATE_AWAKE:
-        if (now - last_activity_ms >= IDLE_TIMEOUT_MS) {
+        if (now - last_activity_ms >= IDLE_TIMEOUT_MS || dark) {
+            if (dark) Serial.println("idle: Claude has rested 5 min, screen off");
             begin_fade(0, now);
             state = STATE_FADING_OUT;
         }

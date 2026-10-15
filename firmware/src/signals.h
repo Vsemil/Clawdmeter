@@ -46,7 +46,12 @@ bool     signals_hooks_seen(void);
 int      signals_activity_at(uint32_t now_ms);    // 0-3, -1 unknown/expired
 int      signals_sessions(void);                  // -1 unknown
 char     signals_last_event(void);                // '\0' none since boot
+// Claude isn't working: hooks are in, the last hook event wasn't a prompt
+// (a turn running) and there were no tool calls in the last minute. False
+// while nothing is known (no hooks).
+bool     signals_resting_at(uint32_t now_ms);
 
 // ---- millis() wrappers (usage_rate_clock.cpp) ----
 SignalsUpdate signals_ingest(const UsageData* d);
 int      signals_activity(void);
+bool     signals_resting(void);

@@ -397,6 +397,7 @@ static void touch_pair_tick(void) {
 }
 
 void loop() {
+    idle_set_claude_resting(signals_resting());
     idle_tick();
     lv_timer_handler();
     ui_tick_anim();

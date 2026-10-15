@@ -80,3 +80,6 @@ bool     signals_hooks_seen(void) { return hooks_seen; }
 int      signals_activity_at(uint32_t now_ms) { return usage_rate_activity_at(now_ms); }
 int      signals_sessions(void) { return sessions; }
 char     signals_last_event(void) { return last_event; }
+bool     signals_resting_at(uint32_t now_ms) {
+    return hooks_seen && usage_rate_activity_at(now_ms) <= 0 && last_event != 'p';
+}

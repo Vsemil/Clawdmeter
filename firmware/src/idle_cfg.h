@@ -10,6 +10,11 @@
 
 #define DISPLAY_DEFAULT_BRIGHTNESS  200      // active-screen brightness
 
+// With Claude Code hooks in: the screen also goes dark once Claude has been
+// resting (signals_resting) this long and nobody has touched the device for
+// as long, USB power or not; Claude working again wakes it.
+#define CLAUDE_IDLE_SLEEP_MS        (5UL * 60UL * 1000UL)   // 5 min
+
 // When false, the device never enters sleep while USB power is present (also
 // wakes from sleep when USB is plugged back in). Useful when sitting on a
 // desk plugged in — also covers battery-less hardware that's always on USB.
