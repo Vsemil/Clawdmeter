@@ -50,3 +50,5 @@ seconds) and sends `x` if the device still shows it.
 | `f` | The hottest model-scoped weekly limit, % used (the endpoint's `limits[]` `weekly_scoped` entries, or `model_scoped[]`; the CLI's "Current week (Fable)"). Shown at the right of the weekly card's reset line when it fits. Absent: no such limit. |
 | `fn` | Its model's display name, at most 12 characters. |
 | `er` | Why the numbers aren't fresh: the shown account's last poll failed (`auth` log in again, `token` waiting for Claude Code to refresh it, `rate` throttled, `net` offline, `app` the CLI failed), on any payload; `auth` with `{"ok":false}` when every account is logged out. The device names it on the status line in place of "Stale"/"No data" where it fits. |
+| `vo` | Sound level, % of the device's normal loudness: the app's `quiet_volume` during `quiet_hours` (local time), else 100. Every data payload; a change at the edge of quiet hours goes out right away. Absent = full. |
+| `nm` | Today's next meeting, "HH:MM title" (the calendar), shown in place of the title in the largest title font that fits; `""` when none is left today. |

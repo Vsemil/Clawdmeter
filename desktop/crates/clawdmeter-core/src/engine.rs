@@ -145,6 +145,12 @@ pub struct Engine {
     sent_aa: Option<u16>,
     /// The language the device last got (`lg`).
     sent_lg: Option<Lang>,
+    /// The sound level the device last got (`vo`).
+    sent_vo: Option<u8>,
+    /// Today's next meeting (`nm`), from the daemon's calendar.
+    next_meeting: Option<String>,
+    /// ...as the device last got it.
+    sent_nm: Option<Option<String>>,
     last_event_ts: Option<i64>,
     /// Latest prompt or tool activity that names no configured account.
     unattributed_activity: Option<i64>,
@@ -183,6 +189,9 @@ impl Engine {
             sent_lv: None,
             sent_aa: None,
             sent_lg: None,
+            sent_vo: None,
+            next_meeting: None,
+            sent_nm: None,
             last_event_ts: None,
             unattributed_activity: None,
             claude_found: true,
@@ -258,6 +267,11 @@ impl Engine {
     /// End an alert past its time to live (see [`AttentionState::expire`]).
     pub fn expire_attention(&mut self, now: SystemTime) -> bool {
         self.attention.expire(now)
+    }
+
+    /// Today's next meeting for the device's title (`nm`); `None` = none.
+    pub fn set_next_meeting(&mut self, m: Option<String>) {
+        self.next_meeting = m;
     }
 
     /// The alert on (or headed to) the screen, if any: e.g. whether a
@@ -469,9 +483,17 @@ impl Engine {
         let n_changed = hooks && self.sent_n != Some(sessions);
         // A new liveliness or attention animation goes out right away, like an event.
         let aa = self.settings.attention_anim.seconds();
+        // Quiet hours by the host's wall clock.
+        let minute = ((now + host.utc_offset_secs).rem_euclid(86_400) / 60) as u32;
+        let vo = match self.settings.quiet_hours {
+            Some(q) if q.contains(minute) => self.settings.quiet_volume,
+            _ => 100,
+        };
         let prefs_changed = self.sent_lv != Some(self.settings.liveliness)
             || self.sent_aa != Some(aa)
-            || self.sent_lg != Some(self.settings.lang);
+            || self.sent_lg != Some(self.settings.lang)
+            || self.sent_vo != Some(vo)
+            || self.sent_nm.as_ref() != Some(&self.next_meeting);
 
         let (mut payload, kind) = if self.logged_out {
             if !(self.fresh_poll || self.attention.pending()) {
@@ -509,6 +531,9 @@ impl Engine {
             p.lv = Some(self.settings.liveliness);
             p.aa = Some(aa);
             p.lg = Some(self.settings.lang.code().to_owned());
+            p.vo = Some(vo);
+            // Always sent, "" for none, so the device drops a meeting that's over.
+            p.nm = Some(self.next_meeting.clone().unwrap_or_default());
             (p, kind)
         };
 
@@ -567,6 +592,12 @@ impl Engine {
         }
         if let Some(lg) = &w.payload.lg {
             self.sent_lg = Some(Lang::parse(lg));
+        }
+        if let Some(vo) = w.payload.vo {
+            self.sent_vo = Some(vo);
+        }
+        if let Some(nm) = &w.payload.nm {
+            self.sent_nm = Some((!nm.is_empty()).then(|| nm.clone()));
         }
     }
 
@@ -661,7 +692,7 @@ mod tests {
         assert_eq!(w.kind, WriteKind::Poll);
         assert_eq!(
             w.payload.to_json(),
-            r#"{"s":15,"sr":60,"w":10,"wr":1440,"st":"allowed","acct":"pro","ok":true,"lv":3,"aa":120,"lg":"en"}"#
+            r#"{"s":15,"sr":60,"w":10,"wr":1440,"st":"allowed","acct":"pro","ok":true,"lv":3,"aa":120,"lg":"en","vo":100,"nm":""}"#
         );
         assert!(write(&mut e, T0 + 1).is_none());
     }
@@ -678,7 +709,7 @@ mod tests {
         assert_eq!(hb.kind, WriteKind::Heartbeat);
         assert_eq!(
             hb.payload.to_json(),
-            r#"{"s":15,"sr":55,"w":10,"wr":1435,"st":"allowed","acct":"pro","c":1,"ok":true,"rp":1,"lv":3,"aa":120,"lg":"en"}"#
+            r#"{"s":15,"sr":55,"w":10,"wr":1435,"st":"allowed","acct":"pro","c":1,"ok":true,"rp":1,"lv":3,"aa":120,"lg":"en","vo":100,"nm":""}"#
         );
         // Three misses: stale, heartbeats stop so the device's freshness lapses.
         for i in 1..=3 {
@@ -1160,6 +1191,18 @@ mod tests {
         assert!(write(&mut e, T0 + 3).is_none());
         e.on_connected();
         assert_eq!(write(&mut e, T0 + 4).unwrap().payload.lv, Some(1), "resent on a reconnect");
+    }
+
+    #[test]
+    fn quiet_hours_turn_the_device_down_on_the_hour() {
+        let mut e = Engine::new(settings("quiet_hours = 21:00-09:00\nquiet_volume = 7\n"));
+        e.on_poll_results(T0, vec![(PathBuf::from("/h/.claude"), Ok(reading(15)))]);
+        let at = |hh: i64| HostClock { utc_offset_secs: hh * 3600 - T0.rem_euclid(86_400), prefers_12h: false };
+        let w = e.next_write(T0, at(20)).unwrap();
+        assert_eq!(w.payload.vo, Some(100), "20:00: normal");
+        e.mark_written(T0, &w);
+        let w = e.next_write(T0 + 1, at(21)).expect("21:00 goes out right away");
+        assert_eq!((w.kind, w.payload.vo), (WriteKind::Event, Some(7)));
     }
 
     #[test]

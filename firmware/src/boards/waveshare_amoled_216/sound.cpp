@@ -29,6 +29,7 @@ void sound_hal_init(void) {
 
 void sound_hal_chime(void) { chime_play(); }
 void sound_hal_melody(uint8_t melody) { chime_play_melody(melody); }
+void sound_hal_set_level(uint8_t pct)       { chime_set_level(pct); }
 void sound_hal_tune(float gain, int volume) { chime_tune(gain, volume); }
 void sound_hal_tick(void)       { chime_tick(); }
 

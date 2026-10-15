@@ -16,6 +16,9 @@ use clawdmeter_ble::{
 use clawdmeter_core::attention::{to_device_text, Alert, AlertKind, AttentionInbox, PROJECT_LIMIT};
 use clawdmeter_core::backoff;
 use clawdmeter_core::calendar::{self, Calendar, Meeting, Reminder};
+
+/// The device keeps this many bytes of the next meeting (`nm`).
+const NEXT_MEETING_LIMIT: usize = 60;
 use clawdmeter_core::engine::PollPlan;
 use clawdmeter_core::events::EventTail;
 use clawdmeter_core::probe;
@@ -285,6 +288,10 @@ pub async fn run(paths: Paths, mut commands: mpsc::UnboundedReceiver<Command>, s
                 let helper = engine.settings().cal_helper.clone();
                 cal_fetch = Some(tokio::task::spawn_blocking(move || calendar::fetch(&source, &helper, now)));
             }
+            let offset = clawdmeter_core::platform::utc_offset_secs();
+            engine.set_next_meeting(
+                meetings.next_today(now, offset, host.prefers_12h).map(|t| to_device_text(&t, NEXT_MEETING_LIMIT)),
+            );
             // Offer the due reminder while the device is there; again each
             // tick until it's on screen (an alert that outranks it may hold
             // the screen for now).

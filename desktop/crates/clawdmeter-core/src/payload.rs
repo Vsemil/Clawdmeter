@@ -107,6 +107,12 @@ pub struct Payload {
     /// stale or missing.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub er: Option<String>,
+    /// Sound level, % of the device's normal loudness (quiet hours).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vo: Option<u8>,
+    /// Today's next meeting, "HH:MM title", shown in place of the title.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nm: Option<String>,
 }
 
 /// The device keeps this many characters of a model name (`fn`).
@@ -115,7 +121,7 @@ pub const SCOPED_NAME_LIMIT: usize = 12;
 /// Every key [`Payload`] can emit, in serialization order.
 pub const PAYLOAD_KEYS: &[&str] = &[
     "s", "sr", "w", "wr", "st", "acct", "tp", "pd", "rd", "t", "tf", "c", "ok", "b", "m", "x", "a", "e", "es", "n",
-    "rp", "lv", "aa", "lg", "k", "pj", "f", "fn", "er",
+    "rp", "lv", "aa", "lg", "k", "pj", "f", "fn", "er", "vo", "nm",
 ];
 /// The fast-clock keys added in v0.4 (old firmware ignores them).
 pub const ADDITIVE_KEYS: &[&str] = &["a", "e", "es", "n", "rp"];
@@ -535,6 +541,8 @@ mod tests {
             f: Some(72),
             fn_: Some("Fable".into()),
             er: Some("net".into()),
+            vo: Some(10),
+            nm: Some("10:00 Sync".into()),
         };
         let v: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&pl.to_json()).unwrap();
         // serde_json's Map is sorted without preserve_order; check membership.

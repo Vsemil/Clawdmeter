@@ -314,6 +314,46 @@ pub struct Settings {
     /// The `calnext` helper for `eventkit` (`cal_helper`, default
     /// `<state>/calnext`).
     pub cal_helper: PathBuf,
+    /// Quiet hours (`quiet_hours = 21:00-09:00`, local time; may wrap
+    /// midnight): the device's sounds play at [`Settings::quiet_volume`].
+    /// `None` = off.
+    pub quiet_hours: Option<QuietHours>,
+    /// Loudness during quiet hours, % of the normal level (`quiet_volume`,
+    /// default 10).
+    pub quiet_volume: u8,
+}
+
+/// Quiet hours: minutes after local midnight, `start` included, `end` not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QuietHours {
+    /// Start, minutes after midnight.
+    pub start: u32,
+    /// End, minutes after midnight (before `start`: past midnight).
+    pub end: u32,
+}
+
+impl QuietHours {
+    /// Parse `21:00-09:00` or `21-9`.
+    pub fn parse(v: &str) -> Option<Self> {
+        let (a, b) = v.split_once('-')?;
+        let mins = |t: &str| -> Option<u32> {
+            let t = t.trim();
+            let (h, m) = t.split_once(':').unwrap_or((t, "0"));
+            let (h, m): (u32, u32) = (h.trim().parse().ok()?, m.trim().parse().ok()?);
+            (h < 24 && m < 60).then_some(h * 60 + m)
+        };
+        let (start, end) = (mins(a)?, mins(b)?);
+        (start != end).then_some(QuietHours { start, end })
+    }
+
+    /// `minute` (after local midnight) falls inside.
+    pub fn contains(self, minute: u32) -> bool {
+        if self.start < self.end {
+            minute >= self.start && minute < self.end
+        } else {
+            minute >= self.start || minute < self.end
+        }
+    }
 }
 
 /// `alert_on`: the alert kinds that show, as a comma list of `permission`,
@@ -455,6 +495,11 @@ impl Settings {
                 .filter(|s| !s.is_empty())
                 .map(str::to_owned),
             cal_remind: crate::calendar::parse_thresholds(cfg.get("cal_remind")),
+            quiet_hours: cfg.get("quiet_hours").and_then(QuietHours::parse),
+            quiet_volume: cfg
+                .get("quiet_volume")
+                .and_then(|v| v.trim().parse::<u32>().ok())
+                .map_or(10, |v| v.min(100) as u8),
             cal_helper: cfg
                 .get("cal_helper")
                 .filter(|s| !s.is_empty())
@@ -678,6 +723,17 @@ mod tests {
         assert_eq!(settings("").release_repo, DEFAULT_RELEASE_REPO);
         assert_eq!(settings("release_repo = me/fork").release_repo, "me/fork");
         assert_eq!(settings("release_repo = nonsense").release_repo, DEFAULT_RELEASE_REPO);
+    }
+
+    #[test]
+    fn quiet_hours() {
+        let q = QuietHours::parse("21:00-09:00").unwrap();
+        assert!(q.contains(21 * 60) && q.contains(3 * 60) && !q.contains(9 * 60) && !q.contains(12 * 60));
+        let d = QuietHours::parse("13-14").unwrap();
+        assert!(d.contains(13 * 60 + 30) && !d.contains(14 * 60));
+        assert_eq!(QuietHours::parse("25-3"), None);
+        assert_eq!(settings("").quiet_hours, None);
+        assert_eq!(settings("quiet_volume = 400\n").quiet_volume, 100);
     }
 
     #[test]

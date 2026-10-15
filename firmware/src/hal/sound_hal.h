@@ -15,6 +15,9 @@ void sound_hal_chime(void);
 // One alert melody (melody.h). The shared default plays the ding; boards on
 // the chime engine play the melody itself.
 void sound_hal_melody(uint8_t melody);
+// Loudness as a share of the tuned level, 0..100 (`vo`, the app's quiet
+// hours). The shared default ignores it; boards on the chime engine scale.
+void sound_hal_set_level(uint8_t pct);
 // Speaker tuning (`chime <gain> [volume]`): try a gain (0..1) and codec volume (0..100,
 // < 0 keeps it) until reboot, and play the ding. No-op without sound.
 void sound_hal_tune(float gain, int volume);

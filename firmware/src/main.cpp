@@ -528,6 +528,7 @@ void loop() {
             if (usage.liveliness > 0) liveliness_set(usage.liveliness);
             if (usage.attn_anim_s >= 0) attn_anim_set(usage.attn_anim_s);
             lang_pref_set(usage.lang);   // restarts on a change
+            sound_hal_set_level(usage.volume_pct < 0 ? 100 : (uint8_t)usage.volume_pct);
             director_on_payload(&usage, &sig);
             if (usage.alert_msg[0]) {
                 Serial.println("attention — mascot");

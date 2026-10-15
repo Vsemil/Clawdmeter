@@ -13,3 +13,4 @@ __attribute__((weak)) void board_hal_restart(void) {}   // simulator: keep runni
 #include "hal/sound_hal.h"
 // Weak default: boards without melodies (or without sound) play the ding.
 __attribute__((weak)) void sound_hal_melody(uint8_t melody) { (void)melody; sound_hal_chime(); }
+__attribute__((weak)) void sound_hal_set_level(uint8_t pct) { (void)pct; }

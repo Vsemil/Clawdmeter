@@ -40,6 +40,8 @@ struct UsageData {
     int16_t  scoped_pct;     // `f`  the hottest model-scoped weekly limit, 0-100; -1 = absent
     char     scoped_name[16];// `fn` its model ("Fable"); "" = absent
     char     err[8];         // `er` why the numbers aren't fresh (auth|token|rate|net|app); "" = absent
+    int8_t   volume_pct;     // `vo` sound level 0-100 (the app's quiet hours); -1 = absent (full)
+    char     next_meeting[64]; // `nm` today's next meeting, "HH:MM title", in place of the title; "" = none
     bool ok;                 // data parse succeeded
     bool valid;              // false until first successful parse
 };

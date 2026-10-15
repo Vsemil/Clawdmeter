@@ -86,6 +86,14 @@ bool payload_parse(const char* json, UsageData* out, const char** err) {
     }
     copy_str(d.scoped_name, sizeof(d.scoped_name), doc["fn"] | "");
     copy_str(d.err, sizeof(d.err), doc["er"] | "");
+    copy_str(d.next_meeting, sizeof(d.next_meeting), doc["nm"] | "");
+    JsonVariant vo = doc["vo"];
+    if (vo.isNull()) {
+        d.volume_pct = -1;
+    } else {
+        int v = vo | 100;
+        d.volume_pct = (int8_t)(v < 0 ? 0 : v > 100 ? 100 : v);
+    }
 
     d.ok = doc["ok"] | false;
     d.valid = true;

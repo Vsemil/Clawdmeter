@@ -69,6 +69,10 @@ struct Layout {
 
 Layout layout_compute(const LayoutShape& shape);
 
+// The title font for `text` (the next meeting in place of the title): the
+// largest from the clock's down that fits the header, its y, and the room.
+const lv_font_t* layout_title_font_for(const Layout& L, const char* text, int16_t* y, int16_t* room);
+
 // Corner icon sizes the layout plans with (ui.cpp checks them against the art).
 #define LAYOUT_LOGO_SLOT        80   // logo.h LOGO_HEIGHT
 #define LAYOUT_LOGO_SLOT_SMALL  40

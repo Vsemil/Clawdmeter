@@ -6,6 +6,7 @@
 #include "minimal_mode.h"
 #include <lvgl.h>
 #include <time.h>
+#include <string.h>
 #include <stdio.h>
 #include <Arduino.h>
 #include "logo.h"
@@ -354,7 +355,26 @@ void ui_set_pair_hint(PairHint hint) {
 
 // The title's font follows the clock format (a 12-hour clock may need a
 // smaller one); hidden where the header has no room for it at all.
+// Today's next meeting (`nm`) takes the title's place; "" = the title.
+static char title_meeting[64] = "";
+
+static void apply_meeting_title(void) {
+    int16_t y, room;
+    const lv_font_t* f = layout_title_font_for(L, title_meeting, &y, &room);
+    if (!f) return;
+    lv_obj_set_style_text_font(lbl_title, f, 0);
+    lv_label_set_long_mode(lbl_title, LV_LABEL_LONG_DOT);   // too long even small: cut with an ellipsis
+    lv_obj_set_width(lbl_title, room);
+    lv_obj_set_style_text_align(lbl_title, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(lbl_title, title_meeting);
+    lv_obj_align(lbl_title, LV_ALIGN_TOP_MID, L.title_cx - L.w / 2, y);
+    lv_obj_clear_flag(lbl_title, LV_OBJ_FLAG_HIDDEN);
+}
+
 static void apply_title_font(void) {
+    if (title_meeting[0]) { apply_meeting_title(); return; }
+    lv_label_set_long_mode(lbl_title, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(lbl_title, LV_SIZE_CONTENT);
     const int fmt = clock_base_epoch > 0 && clock_fmt == 12 ? 1 : 0;
     const lv_font_t* f = L.title_font[fmt];
     if (!f) {
@@ -527,7 +547,17 @@ void ui_update(const UsageData* data) {
     } else if (clock_base_epoch != 0) {   // clock turned off daemon-side → revert title to "Usage"
         clock_base_epoch = 0;
         clock_last_min = -1;
-        lv_label_set_text(lbl_title, S->title);
+        if (!title_meeting[0]) lv_label_set_text(lbl_title, S->title);
+        apply_title_font();
+    }
+
+    // The next meeting in place of the title (or the clock), back when none is left today.
+    if (strcmp(data->next_meeting, title_meeting) != 0) {
+        snprintf(title_meeting, sizeof(title_meeting), "%s", data->next_meeting);
+        if (!title_meeting[0]) {
+            clock_last_min = -1;               // the clock (if on) redraws on the next tick
+            lv_label_set_text(lbl_title, S->title);
+        }
         apply_title_font();
     }
 
@@ -668,7 +698,7 @@ void ui_tick_anim(void) {
 
     // Title clock: once the daemon has sent wall-clock time, replace "Usage" with
     // the live time, advanced locally so it ticks every minute between payloads.
-    if (clock_base_epoch > 0) {
+    if (clock_base_epoch > 0 && !title_meeting[0]) {
         time_t cur = (time_t)(clock_base_epoch + (now - clock_base_ms) / 1000);
         struct tm tmv;
         gmtime_r(&cur, &tmv);   // epoch is already local wall-clock → gmtime keeps it as-is

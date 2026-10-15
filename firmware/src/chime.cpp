@@ -46,6 +46,9 @@ static volatile bool playing = false;
 static es8311_handle_t es    = nullptr;
 
 static float    gain       = DING_GAIN;
+static volatile uint8_t level_pct = 100;   // chime_set_level: quiet hours
+// The gain everything renders at: the tuned one, scaled by the level.
+static float eff_gain(void) { return gain * (float)level_pct / 100.0f; }
 static int16_t* pcm        = nullptr;   // mono samples of the rendered ding
 static uint32_t pcm_frames = 0;         // how many fit (may be < ding_frames)
 static float    pcm_gain   = -1.0f;     // gain `pcm` was rendered at
@@ -106,7 +109,7 @@ static bool render(void) {
     if (!pcm && !allocate()) return false;
     const uint32_t rate = (uint32_t)cfg.sample_rate, full = ding_frames(rate), frames = pcm_frames;
     const uint32_t fade = frames < full ? (uint32_t)(CHIME_FADE_S * rate) : 0;
-    const float g = gain;                       // chime_tune may change it meanwhile
+    const float g = eff_gain();                 // chime_tune / the level may change meanwhile
     const uint32_t t0 = millis();
     for (uint32_t n = 0; n < frames; n++) {
         float s = (float)ding_sample(n, rate, g);
@@ -154,7 +157,7 @@ static void stream_live(void) {
     for (uint32_t n = 0; n < frames;) {
         uint32_t k = 0;
         for (; k < CHUNK_FRAMES && n < frames; k++, n++) {
-            const int16_t s = ding_sample(n, rate, gain);
+            const int16_t s = ding_sample(n, rate, eff_gain());
             chunk[2 * k] = s;
             chunk[2 * k + 1] = s;
         }
@@ -164,7 +167,7 @@ static void stream_live(void) {
 
 static void chime_task(void* arg) {
     // A new gain (chime_tune) renders again here, before the amp comes on.
-    const bool buffered = pcm && (pcm_gain == gain || render());
+    const bool buffered = pcm && (pcm_gain == eff_gain() || render());
     if (cfg.amp_enable) cfg.amp_enable(true);
     delay(8);                                  // let the amp settle (avoids turn-on pop)
     if (buffered) stream_buffer();
@@ -182,7 +185,7 @@ static void chime_task(void* arg) {
 // Render melody `m` at the current gain into the melody buffer.
 static void render_melody(uint8_t m) {
     const uint32_t rate = (uint32_t)cfg.sample_rate, frames = melody_frames((Melody)m, rate);
-    const float g = gain;
+    const float g = eff_gain();
     const uint32_t t0 = millis();
     for (uint32_t n = 0; n < frames && n < mel_cap; n++) {
         mel_pcm[n] = melody_sample((Melody)m, n, rate, g);
@@ -197,7 +200,7 @@ static void render_melody(uint8_t m) {
 
 static void melody_task(void* arg) {
     const uint8_t m = mel_next;
-    if (mel_rendered != m || mel_gain != gain) render_melody(m);
+    if (mel_rendered != m || mel_gain != eff_gain()) render_melody(m);
     if (cfg.amp_enable) cfg.amp_enable(true);
     delay(8);
     stream_mono(mel_pcm, mel_len);
@@ -232,7 +235,8 @@ bool chime_init(const ChimeConfig& c) {
         return false;
     }
     ready = true;
-    pending = true;   // the boot ding, once the render is done
+    // No boot ding: the device may start at night, before the app has said
+    // how loud to be (quiet hours, `vo`).
     Serial.println("chime: ES8311 ready");
     return true;
 }
@@ -260,6 +264,10 @@ void chime_play_melody(uint8_t melody) {
     if (xTaskCreatePinnedToCore(melody_task, "melody", 4096, nullptr, CHIME_TASK_PRIORITY, nullptr,
                                 CHIME_TASK_CORE) != pdPASS)
         playing = false;
+}
+
+void chime_set_level(uint8_t pct) {
+    level_pct = pct > 100 ? 100 : pct;
 }
 
 void chime_tick(void) {

@@ -125,6 +125,17 @@ impl Calendar {
         None
     }
 
+    /// Today's next meeting, "HH:MM title": the first that starts after
+    /// `now` on the same local day. The device shows it in place of its title.
+    pub fn next_today(&self, now: i64, utc_offset_secs: i64, h12: bool) -> Option<String> {
+        let day = |t: i64| (t + utc_offset_secs).div_euclid(86_400);
+        self.meetings
+            .iter()
+            .find(|m| m.start > now)
+            .filter(|m| day(m.start) == day(now))
+            .map(|m| format!("{} {}", clock(m.start, utc_offset_secs, h12), m.title))
+    }
+
     /// The reminder reached the device.
     pub fn mark_sent(&mut self, r: &Reminder) {
         self.sent.insert((r.start, r.threshold));
@@ -408,6 +419,13 @@ mod tests {
         assert_eq!((r.threshold, r.text.as_str()), (0, "12:00 PM Standup"));
         c.mark_sent(&r);
         assert_eq!(c.due(T + 3600 + STARTED_GRACE, &th, 0, false), None, "late: quiet");
+    }
+
+    #[test]
+    fn next_meeting_is_today_only() {
+        let c = cal(&[(T - 600, "Past"), (T + 3600, "Sync"), (T + 20 * 3600, "Tomorrow")]);
+        assert_eq!(c.next_today(T, 0, false).as_deref(), Some("09:00 Sync"));
+        assert_eq!(c.next_today(T + 3601, 0, false), None, "only tomorrow's is left");
     }
 
     #[test]
