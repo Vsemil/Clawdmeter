@@ -2391,6 +2391,8 @@ static const lv_font_fmt_txt_dsc_t font_dsc = {
  *----------------*/
 
 /*Initialize a public general font descriptor*/
+LV_FONT_DECLARE(font_mono_32_cyr);  // Cyrillic (tools/gen_cyr_fonts.sh)
+
 const lv_font_t font_mono_32 = {
     .get_glyph_dsc = lv_font_get_glyph_dsc_fmt_txt,    /*Function pointer to get glyph's data*/
     .get_glyph_bitmap = lv_font_get_bitmap_fmt_txt,    /*Function pointer to get glyph's bitmap*/
@@ -2403,7 +2405,7 @@ const lv_font_t font_mono_32 = {
     .underline_position = -2,
     .underline_thickness = 1,
     .dsc = &font_dsc,          /*The custom font data. Will be accessed by `get_glyph_bitmap/dsc` */
-    .fallback = NULL,
+    .fallback = &font_mono_32_cyr,
     .user_data = NULL,
 };
 

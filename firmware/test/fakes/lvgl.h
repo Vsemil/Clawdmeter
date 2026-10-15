@@ -61,6 +61,15 @@ typedef struct {
     uint32_t glyph_ids_size;
 } lv_font_fmt_txt_kern_pair_t;
 
+// Class-based kerning (the Cyrillic companions use it; widths ignore it).
+typedef struct {
+    const int8_t* class_pair_values;
+    const uint8_t* left_class_mapping;
+    const uint8_t* right_class_mapping;
+    uint8_t left_class_cnt;
+    uint8_t right_class_cnt;
+} lv_font_fmt_txt_kern_classes_t;
+
 typedef struct {
     const uint8_t* glyph_bitmap;
     const lv_font_fmt_txt_glyph_dsc_t* glyph_dsc;

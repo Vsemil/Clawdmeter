@@ -40,7 +40,8 @@ uint16_t lv_font_get_glyph_width(const lv_font_t* font, uint32_t letter, uint32_
     if (letter < 0x20) return 0;
     const lv_font_fmt_txt_dsc_t* d = (const lv_font_fmt_txt_dsc_t*)font->dsc;
     const uint32_t gid = glyph_id(d, letter);
-    if (!gid) return 0;
+    // Missing here: LVGL asks the fallback chain (the Cyrillic companions).
+    if (!gid) return font->fallback ? lv_font_get_glyph_width(font->fallback, letter, next) : 0;
     const uint32_t gnext = font->kerning == 0 ? glyph_id(d, next) : 0;
     const int32_t kv = gnext ? ((int32_t)kern(d, gid, gnext) * d->kern_scale) >> 4 : 0;
     int32_t adv = (int32_t)d->glyph_dsc[gid].adv_w + kv;

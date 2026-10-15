@@ -1713,6 +1713,8 @@ static const lv_font_fmt_txt_dsc_t font_dsc = {
  *----------------*/
 
 /*Initialize a public general font descriptor*/
+LV_FONT_DECLARE(font_golos_14_cyr);  // Cyrillic (tools/gen_cyr_fonts.sh)
+
 const lv_font_t font_styrene_14 = {
     .get_glyph_dsc = lv_font_get_glyph_dsc_fmt_txt,
     .get_glyph_bitmap = lv_font_get_bitmap_fmt_txt,
@@ -1725,7 +1727,7 @@ const lv_font_t font_styrene_14 = {
     .underline_position = -1,
     .underline_thickness = 1,
     .dsc = &font_dsc,
-    .fallback = NULL,
+    .fallback = &font_golos_14_cyr,
     .user_data = NULL,
 };
 
