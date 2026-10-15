@@ -45,6 +45,9 @@ and fails with a clear message when no board or several are attached. If
 | `clawd peek <x>` | The peek beat, as a tap at x would |
 | `liveliness [1-5]` | Print or set Clawd's liveliness (kept in NVS) until the app sends its own `lv` |
 | `attention_anim [seconds]` | Print or set how long Clawd points and waves for an alert (0 = off; kept in NVS) until the app sends its own `aa` |
+| `lang [en\|ru]` | Print or set the interface language (kept in NVS); a change restarts the board to lay it out |
+| `alert_kind <k> [text]` | A typed alert as the app would send it (`k` as in the payload: `permission`, `question`, `idle`, `done`, `limit`, `cal`, `msg`...): caption, colour, melody and acts, `text` after the caption |
+| `melody <name>` | Play one alert melody: `perm`, `question`, `input`, `done`, `limit`, `cal`, `calstart`, `ding` |
 | `chime` (`buzz` is an alias) | Play the ding |
 | `chime <gain> [volume]` | Tune the speaker until reboot: gain 0..1, ES8311 volume 0..100. The 2.16 ships 0.7 / 77 (tuned by ear); the 1.8 and LCD-1.54 ship 0.7 / 75 (not tuned by ear) |
 | `unpair` | Clear bonds and re-advertise; replies `{"unpair":true}` |

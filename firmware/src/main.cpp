@@ -22,6 +22,7 @@
 #include "perf.h"
 #include "pair_hold.h"
 #include "alert_kind.h"
+#include "melody.h"
 #include "ui_text.h"
 
 #include "hal/board_caps.h"
@@ -220,6 +221,36 @@ static void check_serial_cmd() {
                 // QA: `attention_anim [seconds]` (0 = off; until the app sends its own).
                 if (cmd_buf[14] == ' ') attn_anim_set(atoi(cmd_buf + 15));
                 Serial.printf("{\"attention_anim\":%d}\n", attn_anim_get());
+            }
+            else if (strcmp(cmd_buf, "lang") == 0 || strncmp(cmd_buf, "lang ", 5) == 0) {
+                // QA: `lang [en|ru]` restarts into that language (until the app sends its own).
+                Serial.printf("{\"lang\":\"%s\"}\n", S->code);
+                Serial.flush();
+                if (cmd_buf[4] == ' ') lang_pref_set(cmd_buf + 5);
+            }
+            else if (strncmp(cmd_buf, "melody ", 7) == 0) {
+                // QA: `melody <perm|question|input|done|limit|cal|calstart|ding>`.
+                const Melody m = melody_by_name(cmd_buf + 7);
+                if (m < MELODY_COUNT) sound_hal_melody(m);
+                Serial.printf("{\"melody\":\"%s\",\"ok\":%s}\n", cmd_buf + 7, m < MELODY_COUNT ? "true" : "false");
+            }
+            else if (strncmp(cmd_buf, "alert_kind ", 11) == 0) {
+                // QA: `alert_kind <k> [text after the caption]`, a typed alert
+                // as the app would send it (k as in the payload: done, permission...).
+                char kind[16] = "";
+                const char* rest = cmd_buf + 11;
+                size_t n = 0;
+                while (*rest && *rest != ' ' && n < sizeof(kind) - 1) kind[n++] = *rest++;
+                while (*rest == ' ') rest++;
+                const AlertKind k = alert_kind_parse(kind);
+                const char *act_a, *act_b;
+                alert_kind_acts(k, &act_a, &act_b);
+                mascot_attention_acts(act_a, act_b);
+                ui_set_alert_style(k, rest);
+                idle_note_activity();
+                director_alert(*rest ? rest : kind);
+                sound_hal_melody(alert_kind_melody(k));
+                Serial.printf("{\"alert_kind\":\"%s\"}\n", kind);
             }
             else if (strncmp(cmd_buf, "clawd ", 6) == 0) {
                 const bool ok = director_debug(cmd_buf + 6);
