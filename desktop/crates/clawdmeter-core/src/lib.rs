@@ -24,6 +24,7 @@ pub mod attention;
 pub mod autostart;
 pub mod backoff;
 pub mod cadence;
+pub mod calendar;
 pub mod config;
 pub mod engine;
 pub mod events;

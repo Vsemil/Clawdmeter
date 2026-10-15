@@ -5,6 +5,7 @@
 //! event loop never shares a reactor with it. The UI talks to it through a
 //! [`DaemonHandle`]: commands in, a [`Status`] snapshot out.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
@@ -12,8 +13,9 @@ use clawdmeter_ble::{
     should_wake, AddressCache, DeviceEvent, DeviceEvents, DeviceLink, LinkError, LinkOptions, Reconnect, Sighting,
     MAX_WRITE,
 };
-use clawdmeter_core::attention::AttentionInbox;
+use clawdmeter_core::attention::{to_device_text, Alert, AlertKind, AttentionInbox, PROJECT_LIMIT};
 use clawdmeter_core::backoff;
+use clawdmeter_core::calendar::{self, Calendar, Meeting, Reminder};
 use clawdmeter_core::engine::PollPlan;
 use clawdmeter_core::events::EventTail;
 use clawdmeter_core::probe;
@@ -175,6 +177,13 @@ pub async fn run(paths: Paths, mut commands: mpsc::UnboundedReceiver<Command>, s
     let mut last_link_check = unix_now();
     let mut last_write_at = None;
     let mut chimes_muted = false;
+    // Meeting reminders (the `calendar` setting): fetched off the tick, a
+    // reminder offered to the engine counts as sent once it was written.
+    let mut meetings = Calendar::default();
+    let mut cal_fetch: Option<JoinHandle<Result<Vec<Meeting>, String>>> = None;
+    let mut cal_fetched_at = 0i64;
+    let mut cal_offered: Option<(Reminder, String)> = None;
+    let mut cal_logged_at = 0i64;
     let mut ticker = tokio::time::interval(TICK);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
@@ -253,6 +262,50 @@ pub async fn run(paths: Paths, mut commands: mpsc::UnboundedReceiver<Command>, s
         }
         if engine.expire_attention(SystemTime::now()) {
             log::info!("attention alert expired");
+        }
+
+        // ---- calendar ----
+        if let Some(source) = engine.settings().calendar.clone() {
+            if cal_fetch.as_ref().is_some_and(JoinHandle::is_finished) {
+                match cal_fetch.take().expect("checked").await {
+                    Ok(Ok(m)) => {
+                        log::debug!("calendar: {} meeting(s) ahead", m.len());
+                        meetings.set_meetings(m, now);
+                    }
+                    Ok(Err(e)) if now - cal_logged_at >= 600 => {
+                        cal_logged_at = now;
+                        log::warn!("calendar: {e}");
+                    }
+                    Ok(Err(_)) => {}
+                    Err(e) => log::error!("calendar task failed: {e}"),
+                }
+            }
+            if cal_fetch.is_none() && now - cal_fetched_at >= calendar::FETCH_EVERY {
+                cal_fetched_at = now;
+                let helper = engine.settings().cal_helper.clone();
+                cal_fetch = Some(tokio::task::spawn_blocking(move || calendar::fetch(&source, &helper, now)));
+            }
+            // Offer the due reminder while the device is there; again each
+            // tick until it's on screen (an alert that outranks it may hold
+            // the screen for now).
+            let showing = |text: &str, e: &Engine| e.current_alert().is_some_and(|a| a.project == text);
+            let held = cal_offered.as_ref().is_some_and(|(_, text)| showing(text, &engine));
+            if link.is_some() && !held {
+                let offset = clawdmeter_core::platform::utc_offset_secs();
+                if let Some(r) = meetings.due(now, &engine.settings().cal_remind, offset, host.prefers_12h) {
+                    let text = to_device_text(&r.text, PROJECT_LIMIT);
+                    let kind = if r.threshold == 0 { AlertKind::CalendarStart } else { AlertKind::Calendar };
+                    let alert = Alert {
+                        message: String::new(),
+                        session: String::new(),
+                        project: text.clone(),
+                        kind,
+                        at: SystemTime::now(),
+                    };
+                    engine.on_attention(Some(alert), &HashMap::new());
+                    cal_offered = Some((r, text));
+                }
+            }
         }
 
         // ---- slow clock ----
@@ -380,6 +433,16 @@ pub async fn run(paths: Paths, mut commands: mpsc::UnboundedReceiver<Command>, s
                     Ok(()) => {
                         engine.mark_written(now, &w);
                         last_write_at = Some(now);
+                        // The reminder reached the device: don't send it again.
+                        let cal_kind = matches!(w.payload.k.as_deref(), Some("cal" | "calstart"));
+                        if let Some((r, text)) = cal_offered
+                            .as_ref()
+                            .filter(|(_, t)| cal_kind && w.payload.pj.as_deref() == Some(t.as_str()))
+                        {
+                            log::info!("calendar reminder sent: {text}");
+                            meetings.mark_sent(r);
+                            cal_offered = None;
+                        }
                     }
                     Err(e) => {
                         log::warn!("write failed: {e}");

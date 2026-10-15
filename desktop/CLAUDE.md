@@ -67,7 +67,11 @@ is faked behind `FlashHardware`.
   `release_repo`, `update_check`, `onboarding_done`, `alert_on` (alert kinds
   the daemon lets through: the hook records `k` from `hook_event_name` /
   `notification_type` and `engine.on_attention` drops the rest; default all
-  but `idle`).
+  but `idle`; `done` = a turn of 45 s or more finished), `lang` (`en`/`ru`,
+  sent as `lg`), `calendar` (`eventkit`, an `https://` ICS feed or a `.ics`
+  path; the old `cal_ics_url` is read when it's absent), `cal_remind`
+  (minutes, default `15, 5`), `cal_helper` (the `tools/calnext` helper for
+  `eventkit`, default `<state>/calnext`).
 - Launch paths (`clawdmeter-core::launch`): hooks and Start at login write a
   stable path (`$APPIMAGE`, the Nix profile link, else `current_exe`). Under
   an AppImage, hooks run a copy extracted to `<state>/appimage/` (renewed when

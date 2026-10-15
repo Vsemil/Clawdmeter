@@ -200,7 +200,6 @@ impl UsageError {
         )
     }
 
-    /// A 429 from the usage endpoint (ours, or Claude Code's).
     /// What the device says about it (`er`): `auth` (log in again), `token`
     /// (waiting for Claude Code to refresh it), `rate` (the endpoint is
     /// throttling), `net` (offline) or `app` (the CLI failed).
@@ -214,6 +213,7 @@ impl UsageError {
         }
     }
 
+    /// A 429 from the usage endpoint (ours, or Claude Code's).
     pub fn is_throttle(&self) -> bool {
         matches!(self, UsageError::Throttled { .. } | UsageError::RateLimited { .. })
     }

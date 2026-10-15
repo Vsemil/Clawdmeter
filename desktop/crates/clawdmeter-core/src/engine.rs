@@ -260,6 +260,12 @@ impl Engine {
         self.attention.expire(now)
     }
 
+    /// The alert on (or headed to) the screen, if any: e.g. whether a
+    /// calendar reminder offered earlier is still waiting to go out.
+    pub fn current_alert(&self) -> Option<&Alert> {
+        self.attention.alert.as_ref()
+    }
+
     /// The device says the user dismissed the alert there (or it timed out).
     pub fn on_device_dismissed(&mut self) {
         self.attention.dismissed();

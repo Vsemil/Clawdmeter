@@ -306,6 +306,14 @@ pub struct Settings {
     pub attention_anim: AttentionAnim,
     /// The device's interface language (`lg`, default English).
     pub lang: Lang,
+    /// Meeting reminders' source (`calendar`): `eventkit`, an `https://`
+    /// ICS feed or a `.ics` path; `None` = off. See [`crate::calendar`].
+    pub calendar: Option<String>,
+    /// Minutes before a meeting to remind (`cal_remind`, default 15, 5).
+    pub cal_remind: Vec<u32>,
+    /// The `calnext` helper for `eventkit` (`cal_helper`, default
+    /// `<state>/calnext`).
+    pub cal_helper: PathBuf,
 }
 
 /// `alert_on`: the alert kinds that show, as a comma list of `permission`,
@@ -441,6 +449,16 @@ impl Settings {
             liveliness: cfg.get("liveliness").map(parse_liveliness).unwrap_or(DEFAULT_LIVELINESS),
             attention_anim: cfg.get("attention_anim").map(AttentionAnim::parse).unwrap_or_default(),
             lang: cfg.get("lang").map(Lang::parse).unwrap_or_default(),
+            calendar: cfg
+                .get("calendar")
+                .or_else(|| cfg.get("cal_ics_url"))
+                .filter(|s| !s.is_empty())
+                .map(str::to_owned),
+            cal_remind: crate::calendar::parse_thresholds(cfg.get("cal_remind")),
+            cal_helper: cfg
+                .get("cal_helper")
+                .filter(|s| !s.is_empty())
+                .map_or_else(|| paths.state_dir.join("calnext"), |s| paths.expand_tilde(s)),
         }
     }
 
