@@ -29,6 +29,11 @@ bool chime_init(const ChimeConfig& cfg);
 // before the render is done, it plays when the render finishes.
 void chime_play(void);
 
+// Play one alert melody (melody.h; MELODY_DING is chime_play). Rendered on
+// demand into a PSRAM buffer and kept until another melody is asked for;
+// without PSRAM the ding plays instead. No-op while anything plays.
+void chime_play_melody(uint8_t melody);
+
 // Call every loop: the first call starts the background render.
 void chime_tick(void);
 

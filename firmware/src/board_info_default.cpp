@@ -9,3 +9,7 @@ __attribute__((weak)) void board_hal_restart(void) { esp_restart(); }
 #else
 __attribute__((weak)) void board_hal_restart(void) {}   // simulator: keep running
 #endif
+
+#include "hal/sound_hal.h"
+// Weak default: boards without melodies (or without sound) play the ding.
+__attribute__((weak)) void sound_hal_melody(uint8_t melody) { (void)melody; sound_hal_chime(); }

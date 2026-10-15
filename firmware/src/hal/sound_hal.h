@@ -1,4 +1,5 @@
 #pragma once
+#include <stdint.h>
 
 // Optional audio output: the ding (ding.h), played for an attention alert
 // and when the session window resets. ES8311 boards stream it through the
@@ -11,6 +12,9 @@
 void sound_hal_init(void);
 void sound_hal_tick(void);
 void sound_hal_chime(void);
+// One alert melody (melody.h). The shared default plays the ding; boards on
+// the chime engine play the melody itself.
+void sound_hal_melody(uint8_t melody);
 // Speaker tuning (`chime <gain> [volume]`): try a gain (0..1) and codec volume (0..100,
 // < 0 keeps it) until reboot, and play the ding. No-op without sound.
 void sound_hal_tune(float gain, int volume);

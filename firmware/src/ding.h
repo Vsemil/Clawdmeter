@@ -21,3 +21,7 @@ float ding_value(uint32_t n, uint32_t rate);
 
 // Frame `n` as a 16-bit sample at `gain` (0..1 of the ding's own level).
 int16_t ding_sample(uint32_t n, uint32_t rate, float gain);
+
+// The same strike at another pitch `f0` (Hz): the alert melodies
+// (melody.h) are sequences of these. ding_value() is f0 = 554.5.
+float ding_note_value(uint32_t n, uint32_t rate, float f0);
