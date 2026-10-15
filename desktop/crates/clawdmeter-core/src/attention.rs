@@ -31,10 +31,14 @@ pub const ATTENTION_MAX_AGE: Duration = Duration::from_secs(60);
 pub const ALERT_TTL: Duration = Duration::from_secs(2 * 60);
 /// The test alert ends sooner: nothing ever clears its session.
 pub const TEST_ALERT_TTL: Duration = Duration::from_secs(30);
+/// A moment (a finished turn) is news for this long, then it's gone.
+pub const DONE_ALERT_TTL: Duration = Duration::from_secs(30);
 /// The session id of the Hooks page's test alert.
 pub const TEST_SESSION: &str = "clawdmeter-test";
 /// The device's message buffer holds this many UTF-8 bytes.
 pub const MESSAGE_LIMIT: usize = 120;
+/// ...and its project name buffer this many.
+pub const PROJECT_LIMIT: usize = 40;
 
 /// What a session is waiting for. The hook records it (`k`) from Claude
 /// Code's hook input; which kinds alert is the `alert_on` setting.
@@ -51,6 +55,15 @@ pub enum AlertKind {
     Elicitation,
     /// Any other notification type; follows [`AlertKind::Permission`].
     Other,
+    /// A long turn finished (the hook on `Stop`). A moment, not a wait:
+    /// it never takes the screen from a session that is waiting for you.
+    Done,
+    /// A meeting soon (the calendar).
+    Calendar,
+    /// The meeting has started.
+    CalendarStart,
+    /// Free text put up from outside (the MCP server): shown as written.
+    Message,
 }
 
 impl AlertKind {
@@ -62,7 +75,32 @@ impl AlertKind {
             AlertKind::Idle => "idle",
             AlertKind::Elicitation => "elicitation",
             AlertKind::Other => "other",
+            AlertKind::Done => "done",
+            AlertKind::Calendar => "cal",
+            AlertKind::CalendarStart => "calstart",
+            AlertKind::Message => "msg",
         }
+    }
+
+    /// Which alert keeps the screen when two sessions want it: the higher
+    /// rank wins, a tie goes to the newer one.
+    pub fn rank(self) -> u8 {
+        match self {
+            AlertKind::Permission | AlertKind::Other => 6,
+            AlertKind::Question | AlertKind::Elicitation | AlertKind::CalendarStart => 5,
+            AlertKind::Idle | AlertKind::Calendar | AlertKind::Message => 4,
+            AlertKind::Done => 2,
+        }
+    }
+
+    /// A session waiting for you (until it's answered), as opposed to a
+    /// moment that passes. A wait that loses the screen queues for it; a
+    /// moment that loses it is dropped.
+    pub fn waits(self) -> bool {
+        matches!(
+            self,
+            AlertKind::Permission | AlertKind::Other | AlertKind::Question | AlertKind::Idle | AlertKind::Elicitation
+        )
     }
 
     /// Read `k`; a missing value (older hooks, the legacy script) is a
@@ -73,6 +111,10 @@ impl AlertKind {
             Some("question") => AlertKind::Question,
             Some("idle") => AlertKind::Idle,
             Some("elicitation") => AlertKind::Elicitation,
+            Some("done") => AlertKind::Done,
+            Some("cal") => AlertKind::Calendar,
+            Some("calstart") => AlertKind::CalendarStart,
+            Some("msg") => AlertKind::Message,
             Some(_) => AlertKind::Other,
         }
     }
@@ -82,6 +124,7 @@ impl AlertKind {
     pub fn from_hook(event: Option<&str>, notification_type: Option<&str>) -> Self {
         match (event, notification_type) {
             (Some("PreToolUse"), _) => AlertKind::Question,
+            (Some("Stop"), _) => AlertKind::Done,
             (_, None | Some("permission_prompt")) => AlertKind::Permission,
             (_, Some("idle_prompt")) => AlertKind::Idle,
             (_, Some("elicitation_dialog")) => AlertKind::Elicitation,
@@ -97,6 +140,10 @@ impl AlertKind {
             AlertKind::Permission | AlertKind::Other => "Permission needed!",
             AlertKind::Idle => "Waiting for you!",
             AlertKind::Elicitation => "MCP request!",
+            AlertKind::Done => "Done!",
+            AlertKind::Calendar => "Meeting soon!",
+            AlertKind::CalendarStart => "Meeting started!",
+            AlertKind::Message => "Message",
         }
     }
 }
@@ -108,6 +155,9 @@ pub struct Alert {
     pub message: String,
     /// Claude Code session id (may be empty).
     pub session: String,
+    /// The project it's from (the session's git root, else its cwd), for
+    /// the device's alert line (`pj`); may be empty.
+    pub project: String,
     /// What the session waits for.
     pub kind: AlertKind,
     /// The file's mtime.
@@ -118,7 +168,7 @@ impl Alert {
     /// What the device shows: the kind's [`AlertKind::device_text`], or the
     /// test alert's own text.
     pub fn device_message(&self) -> &str {
-        if self.session == TEST_SESSION && !self.message.is_empty() {
+        if (self.session == TEST_SESSION || self.kind == AlertKind::Message) && !self.message.is_empty() {
             &self.message
         } else {
             self.kind.device_text()
@@ -195,7 +245,13 @@ impl AttentionInbox {
             Some(other) => other.to_string(),
         };
         let kind = AlertKind::parse(v.get("k").and_then(|k| k.as_str()));
-        Some(Alert { message: to_device_text(&field("m"), MESSAGE_LIMIT), session: field("s"), kind, at: mtime })
+        Some(Alert {
+            message: to_device_text(&field("m"), MESSAGE_LIMIT),
+            session: field("s"),
+            project: to_device_text(&field("p"), PROJECT_LIMIT),
+            kind,
+            at: mtime,
+        })
     }
 
     /// Consume every `clear-<sid>` file: `{sid: mtime}`.
@@ -233,8 +289,15 @@ pub struct AttentionState {
     pub alert: Option<Alert>,
     /// The alert hasn't been sent yet.
     pub alert_unsent: bool,
+    /// It rings when sent. A wait coming back from the queue doesn't ring
+    /// again: it already did when it went up.
+    pub alert_beeps: bool,
     /// A clear for a shown alert hasn't been sent yet.
     pub clear_unsent: bool,
+    /// Other sessions still waiting for you behind the one on screen
+    /// ([`AlertKind::waits`]); the best ([`AlertKind::rank`], then the
+    /// oldest) takes the screen when it frees up.
+    pub queued: Vec<Alert>,
 }
 
 /// Fields to merge into the next payload.
@@ -244,58 +307,123 @@ pub struct AttentionFields {
     pub beep: bool,
     /// `m`: message for the status line.
     pub message: Option<String>,
+    /// `k`: what the alert is about ([`AlertKind::as_str`]).
+    pub kind: Option<&'static str>,
+    /// `pj`: the project it's from.
+    pub project: Option<String>,
     /// `x`: end the alert.
     pub clear: bool,
+}
+
+/// `alert`'s session was cleared after it went up.
+fn cleared(alert: &Alert, clears: &HashMap<String, SystemTime>) -> bool {
+    !alert.session.is_empty() && clears.get(&alert.session).is_some_and(|t| *t > alert.at)
+}
+
+/// How long `alert` lives with nobody clearing it.
+fn ttl(alert: &Alert) -> Duration {
+    if alert.session == TEST_SESSION {
+        TEST_ALERT_TTL
+    } else if alert.kind == AlertKind::Done {
+        DONE_ALERT_TTL
+    } else {
+        ALERT_TTL
+    }
 }
 
 impl AttentionState {
     /// Fold one tick's files into the state.
     /// Returns whether a new alert went up (and is still up after the clears).
     pub fn ingest(&mut self, new_alert: Option<Alert>, clears: &HashMap<String, SystemTime>) -> bool {
-        let mut raised = false;
-        if let Some(a) = new_alert {
-            let repeat = self.alert.as_ref().is_some_and(|cur| !cur.session.is_empty() && cur.session == a.session);
-            if !repeat {
-                self.alert = Some(a);
-                self.alert_unsent = true;
-                self.clear_unsent = false;
-                raised = true;
-            }
-        }
-        if let Some(cur) = &self.alert {
-            if let Some(t) = clears.get(&cur.session) {
-                if !cur.session.is_empty() && *t > cur.at {
-                    // Never shown: nothing to clear on the device.
-                    self.clear_unsent = !self.alert_unsent;
-                    self.alert = None;
-                    self.alert_unsent = false;
-                    raised = false;
-                }
-            }
+        let mut raised = new_alert.is_some_and(|a| self.offer(a));
+        // Waits answered while they queued just go; the one on screen ends
+        // and the next waiting session takes its place.
+        self.queued.retain(|q| !cleared(q, clears));
+        if self.alert.as_ref().is_some_and(|cur| cleared(cur, clears)) {
+            self.end_current(true);
+            raised = false;
         }
         raised
     }
 
-    /// End an alert that has been up for its time to live ([`ALERT_TTL`],
-    /// [`TEST_ALERT_TTL`]). A shown one gets a clear so the device drops it
-    /// too. Returns whether it ended.
-    pub fn expire(&mut self, now: SystemTime) -> bool {
-        let Some(cur) = &self.alert else { return false };
-        let ttl = if cur.session == TEST_SESSION { TEST_ALERT_TTL } else { ALERT_TTL };
-        if now.duration_since(cur.at).unwrap_or_default() < ttl {
+    /// A new alert wants the screen. The same session again only counts
+    /// when it outranks what it said before (AskUserQuestion notifies
+    /// twice); another session takes the screen unless it ranks lower, and
+    /// a wait that loses it (either one) queues.
+    fn offer(&mut self, a: Alert) -> bool {
+        let Some(cur) = &self.alert else {
+            self.show(a, true);
+            return true;
+        };
+        let same = !cur.session.is_empty() && cur.session == a.session;
+        if same {
+            if a.kind.rank() <= cur.kind.rank() {
+                return false;
+            }
+        } else if a.kind.rank() < cur.kind.rank() {
+            if a.kind.waits() {
+                self.enqueue(a);
+            }
             return false;
+        } else if let Some(old) = self.alert.take().filter(|o| o.kind.waits()) {
+            self.enqueue(old);
         }
-        self.clear_unsent = !self.alert_unsent;
-        self.alert = None;
-        self.alert_unsent = false;
+        self.show(a, true);
         true
     }
 
-    /// The device ended the alert itself: forget it without sending a clear.
+    fn enqueue(&mut self, a: Alert) {
+        self.queued.retain(|q| q.session.is_empty() || q.session != a.session);
+        self.queued.push(a);
+    }
+
+    fn show(&mut self, a: Alert, beeps: bool) {
+        self.alert = Some(a);
+        self.alert_unsent = true;
+        self.alert_beeps = beeps;
+        self.clear_unsent = false;
+    }
+
+    /// The alert on screen is over: the best queued wait takes its place
+    /// (a new `m` replaces the device's alert, no clear needed), else a
+    /// clear goes out when `tell_device` and it was shown.
+    fn end_current(&mut self, tell_device: bool) {
+        let shown = !self.alert_unsent;
+        self.alert = None;
+        self.alert_unsent = false;
+        let best = (0..self.queued.len()).max_by(|&i, &j| {
+            let (a, b) = (&self.queued[i], &self.queued[j]);
+            a.kind.rank().cmp(&b.kind.rank()).then(b.at.cmp(&a.at))
+        });
+        match best {
+            Some(i) => {
+                let next = self.queued.remove(i);
+                self.show(next, false);
+            }
+            None => self.clear_unsent = tell_device && shown,
+        }
+    }
+
+    /// End an alert that has been up for its time to live ([`ALERT_TTL`],
+    /// [`TEST_ALERT_TTL`], [`DONE_ALERT_TTL`]), and drop queued waits that
+    /// outlived theirs. A shown one gets a clear so the device drops it too,
+    /// unless a queued wait takes its place. Returns whether it ended.
+    pub fn expire(&mut self, now: SystemTime) -> bool {
+        let alive = |a: &Alert| now.duration_since(a.at).unwrap_or_default() < ttl(a);
+        self.queued.retain(alive);
+        let Some(cur) = &self.alert else { return false };
+        if alive(cur) {
+            return false;
+        }
+        self.end_current(true);
+        true
+    }
+
+    /// The device ended the alert itself: forget it without sending a clear
+    /// (a queued wait still comes up).
     pub fn dismissed(&mut self) {
         if !self.alert_unsent {
-            self.alert = None;
-            self.clear_unsent = false;
+            self.end_current(false);
         }
     }
 
@@ -313,8 +441,12 @@ impl AttentionState {
     pub fn fields(&self, beep_on: bool) -> AttentionFields {
         let mut f = AttentionFields::default();
         if self.alert_unsent {
-            f.beep = beep_on;
-            f.message = self.alert.as_ref().map(|a| a.device_message().to_owned());
+            if let Some(a) = &self.alert {
+                f.beep = beep_on && self.alert_beeps;
+                f.message = Some(a.device_message().to_owned());
+                f.kind = Some(a.kind.as_str());
+                f.project = (!a.project.is_empty()).then(|| a.project.clone());
+            }
         }
         f.clear = self.clear_unsent;
         f
@@ -379,7 +511,13 @@ mod tests {
     }
 
     fn raised(session: &str, at: SystemTime) -> Alert {
-        Alert { message: "Approve?".into(), session: session.into(), kind: AlertKind::Permission, at }
+        Alert {
+            message: "Approve?".into(),
+            session: session.into(),
+            project: String::new(),
+            kind: AlertKind::Permission,
+            at,
+        }
     }
 
     #[test]
@@ -449,7 +587,86 @@ mod tests {
     }
 
     fn alert(sid: &str, msg: &str, at: SystemTime) -> Alert {
-        Alert { message: msg.into(), session: sid.into(), kind: AlertKind::Permission, at }
+        Alert { message: msg.into(), session: sid.into(), project: String::new(), kind: AlertKind::Permission, at }
+    }
+
+    fn kinded(sid: &str, kind: AlertKind, at: SystemTime) -> Alert {
+        Alert { message: String::new(), session: sid.into(), project: format!("p-{sid}"), kind, at }
+    }
+
+    #[test]
+    fn a_moment_never_takes_the_screen_from_a_wait() {
+        let t0 = SystemTime::now();
+        let none = HashMap::new();
+        let mut st = AttentionState::default();
+        st.ingest(Some(kinded("a", AlertKind::Permission, t0)), &none);
+        st.mark_sent();
+        assert!(!st.ingest(Some(kinded("b", AlertKind::Done, t0)), &none), "done from b is dropped");
+        assert_eq!(st.alert.as_ref().unwrap().session, "a");
+        assert!(!st.pending() && st.queued.is_empty());
+    }
+
+    #[test]
+    fn a_wait_that_loses_the_screen_comes_back() {
+        let t0 = SystemTime::now();
+        let none = HashMap::new();
+        let mut st = AttentionState::default();
+        st.ingest(Some(kinded("a", AlertKind::Idle, t0)), &none);
+        st.mark_sent();
+        assert!(st.ingest(Some(kinded("b", AlertKind::Permission, t0)), &none), "permission outranks idle");
+        let f = st.fields(true);
+        assert_eq!((f.kind, f.project.as_deref(), f.beep), (Some("permission"), Some("p-b"), true));
+        st.mark_sent();
+        assert_eq!(st.queued.len(), 1, "a waits behind it");
+        let b_done: HashMap<_, _> = [("b".to_owned(), t0 + Duration::from_secs(1))].into();
+        st.ingest(None, &b_done);
+        let f = st.fields(true);
+        assert_eq!((f.kind, f.project.as_deref()), (Some("idle"), Some("p-a")), "a is back");
+        assert!(!f.beep && !f.clear, "without ringing again, and no clear in between");
+        st.mark_sent();
+        let a_done: HashMap<_, _> = [("a".to_owned(), t0 + Duration::from_secs(2))].into();
+        st.ingest(None, &a_done);
+        assert!(st.alert.is_none() && st.fields(true).clear, "the last one clears");
+    }
+
+    #[test]
+    fn queued_waits_answered_meanwhile_just_go() {
+        let t0 = SystemTime::now();
+        let none = HashMap::new();
+        let mut st = AttentionState::default();
+        st.ingest(Some(kinded("a", AlertKind::Permission, t0)), &none);
+        st.mark_sent();
+        st.ingest(Some(kinded("b", AlertKind::Idle, t0)), &none);
+        assert_eq!(st.queued.len(), 1, "a lower-ranked wait queues");
+        let b: HashMap<_, _> = [("b".to_owned(), t0 + Duration::from_secs(1))].into();
+        st.ingest(None, &b);
+        assert!(st.queued.is_empty());
+        let a: HashMap<_, _> = [("a".to_owned(), t0 + Duration::from_secs(2))].into();
+        st.ingest(None, &a);
+        assert!(st.alert.is_none() && st.clear_unsent);
+    }
+
+    #[test]
+    fn the_same_session_escalates_but_never_repeats() {
+        let t0 = SystemTime::now();
+        let none = HashMap::new();
+        let mut st = AttentionState::default();
+        st.ingest(Some(kinded("a", AlertKind::Idle, t0)), &none);
+        st.mark_sent();
+        assert!(!st.ingest(Some(kinded("a", AlertKind::Idle, t0)), &none));
+        assert!(st.ingest(Some(kinded("a", AlertKind::Permission, t0)), &none));
+        assert!(st.queued.is_empty(), "its own lesser wait doesn't queue");
+    }
+
+    #[test]
+    fn done_is_news_for_half_a_minute() {
+        let t0 = SystemTime::now();
+        let mut st = AttentionState::default();
+        st.ingest(Some(kinded("a", AlertKind::Done, t0)), &HashMap::new());
+        st.mark_sent();
+        assert!(!st.expire(t0 + DONE_ALERT_TTL - Duration::from_secs(1)));
+        assert!(st.expire(t0 + DONE_ALERT_TTL));
+        assert!(st.clear_unsent);
     }
 
     #[test]
@@ -462,7 +679,13 @@ mod tests {
         assert!(st.alert_unsent);
         assert_eq!(
             st.fields(false),
-            AttentionFields { beep: false, message: Some("Permission needed!".into()), clear: false }
+            AttentionFields {
+                beep: false,
+                message: Some("Permission needed!".into()),
+                kind: Some("permission"),
+                project: None,
+                clear: false
+            }
         );
         assert!(st.fields(true).beep);
         st.mark_sent();
@@ -481,7 +704,10 @@ mod tests {
         let same: HashMap<_, _> = [("abc".to_owned(), t0 + Duration::from_secs(2))].into();
         st.ingest(None, &same);
         assert!(st.alert.is_none() && st.clear_unsent);
-        assert_eq!(st.fields(true), AttentionFields { beep: false, message: None, clear: true });
+        assert_eq!(
+            st.fields(true),
+            AttentionFields { beep: false, message: None, kind: None, project: None, clear: true }
+        );
         st.mark_sent();
 
         // Same second, later by 0.5 s: still clears.
@@ -515,7 +741,10 @@ mod tests {
         let at = SystemTime::now();
         let line = |kind, session: &str, message: &str| {
             let mut st = AttentionState::default();
-            st.ingest(Some(Alert { message: message.into(), session: session.into(), kind, at }), &HashMap::new());
+            st.ingest(
+                Some(Alert { message: message.into(), session: session.into(), project: String::new(), kind, at }),
+                &HashMap::new(),
+            );
             st.fields(false).message.unwrap()
         };
         let hook_text = "Claude needs your permission to use Bash";

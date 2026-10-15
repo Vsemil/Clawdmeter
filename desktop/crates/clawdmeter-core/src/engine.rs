@@ -511,6 +511,8 @@ impl Engine {
             payload.b = Some(1);
         }
         payload.m = att.message;
+        payload.k = att.kind.map(str::to_owned);
+        payload.pj = att.project;
         if att.clear {
             payload.x = Some(1);
         }
@@ -785,6 +787,7 @@ mod tests {
         let alert = Alert {
             message: "Claude needs you".into(),
             session: "abc".into(),
+            project: String::new(),
             kind: AlertKind::Permission,
             at: SystemTime::now(),
         };
@@ -805,7 +808,13 @@ mod tests {
         e.on_poll_results(T0, vec![(PathBuf::from("/h/.claude"), Ok(reading(15)))]);
         write(&mut e, T0).unwrap();
         let at = SystemTime::now();
-        let alert = |s: &str| Alert { message: "m".into(), session: s.into(), kind: AlertKind::Permission, at };
+        let alert = |s: &str| Alert {
+            message: "m".into(),
+            session: s.into(),
+            project: String::new(),
+            kind: AlertKind::Permission,
+            at,
+        };
 
         // A session killed before its clear: expires with an x=1.
         e.on_attention(Some(alert("gone")), &HashMap::new());
@@ -826,7 +835,7 @@ mod tests {
     #[test]
     fn the_desktop_chime_follows_new_alerts() {
         let at = SystemTime::now();
-        let alert = |s: &str, kind| Alert { message: "m".into(), session: s.into(), kind, at };
+        let alert = |s: &str, kind| Alert { message: "m".into(), session: s.into(), project: String::new(), kind, at };
         let mut e = Engine::new(settings(""));
         e.on_attention(Some(alert("a", AlertKind::Permission)), &HashMap::new());
         assert!(!e.take_desktop_chime(), "off by default");
@@ -854,8 +863,13 @@ mod tests {
         let mut e = Engine::new(settings("alert_chime = on\n"));
         e.on_poll_results(T0, vec![(PathBuf::from("/h/.claude"), Ok(reading(15)))]);
         write(&mut e, T0).unwrap();
-        let idle =
-            Alert { message: "waiting".into(), session: "s".into(), kind: AlertKind::Idle, at: SystemTime::now() };
+        let idle = Alert {
+            message: "waiting".into(),
+            session: "s".into(),
+            project: String::new(),
+            kind: AlertKind::Idle,
+            at: SystemTime::now(),
+        };
         e.on_attention(Some(idle.clone()), &HashMap::new());
         assert!(!e.status(T0).attention, "idle is off by default");
         assert!(write(&mut e, T0 + 2).is_none());

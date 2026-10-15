@@ -6,30 +6,43 @@
 //! (`~/.config/clawdmeter`, `%LOCALAPPDATA%\Clawdmeter` on Windows):
 //!
 //! * `alert` writes `attention` (`{"k": kind, "m": message, "s": session
-//!   id}`, one line; the kind lets the daemon drop alert types the user
-//!   turned off, see [`clawdmeter_core::attention::AlertKind`]);
-//! * `clear` touches `clear-<session id>`;
+//!   id, "p": project}`, one line; the kind lets the daemon drop alert types
+//!   the user turned off, see [`clawdmeter_core::attention::AlertKind`]); an
+//!   idle prompt doesn't alert while the session's background work runs;
+//! * `clear` touches `clear-<session id>`; on a prompt it also stamps
+//!   `turn-<session id>` (the turn's start);
+//! * `done` (on `Stop`) writes a `done` alert when the turn ran at least
+//!   [`DONE_MIN_TURN`] seconds and left no background work running;
 //! * `event` appends `<unix_ts> <hook_event_name> <session_id>` to
 //!   `events.log`, rolling it to `events.log.1` past 256 KB.
 //!
 //! `alert event` / `clear event` do both from one read of stdin. Only the
 //! event name and session id are recorded, never the prompt or the tool call.
+//! A prompt the harness wrote (a task notification, a system reminder)
+//! isn't you: it neither clears, nor stamps a turn, nor logs an event.
 //! Hook stdout can reach the model, so the hook prints nothing and always
 //! exits 0. The file formats match the legacy `attention-hook.sh` byte for
 //! byte apart from the alert's `k`, which older readers ignore.
 
 pub mod install;
+pub mod tasks;
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::Path;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use clawdmeter_core::attention::AlertKind;
 use serde_json::{Map, Value};
 
 /// `events.log` rolls over once it is larger than this.
 pub const EVENTS_ROLL_BYTES: u64 = 262_144;
+/// A turn shorter than this isn't worth a "done": you're right there.
+pub const DONE_MIN_TURN: u64 = 45;
+/// Turn stamps older than this are swept (sessions that never stopped).
+const TURN_STAMP_MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
+/// Prompts that come from the harness rather than from you.
+const HARNESS_PROMPTS: [&str; 3] = ["[SYSTEM NOTIFICATION", "<task-notification>", "<system-reminder>"];
 
 /// What one invocation does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,6 +63,8 @@ pub enum Action {
     Clear,
     /// Append to events.log.
     Event,
+    /// A turn finished: maybe a `done` alert.
+    Done,
     /// Unknown or missing: do nothing (still exit 0).
     None,
 }
@@ -61,6 +76,7 @@ impl Mode {
             Some("alert") => Action::Alert,
             Some("clear") => Action::Clear,
             Some("event") => Action::Event,
+            Some("done") => Action::Done,
             _ => Action::None,
         };
         Mode { action, log_too: args.get(1).map(String::as_str) == Some("event") }
@@ -75,15 +91,74 @@ pub fn run(mode: Mode, input: &str, state_dir: &Path, now_unix: u64) {
     }
     // Invalid JSON: the script's jq calls all fail, so nothing is written.
     let Ok(v) = serde_json::from_str::<Value>(input) else { return };
+    if harness_prompt(&v) {
+        return;
+    }
     if mode.log_too {
         let _ = log_event(&v, state_dir, now_unix);
     }
     let _ = match mode.action {
         Action::Alert => write_alert(&v, state_dir),
-        Action::Clear => touch_clear(&v, state_dir),
+        Action::Clear => touch_clear(&v, state_dir).and_then(|()| stamp_turn(&v, state_dir, now_unix)),
         Action::Event => log_event(&v, state_dir, now_unix),
+        Action::Done => write_done(&v, state_dir, now_unix),
         Action::None => Ok(()),
     };
+}
+
+fn text<'a>(v: &'a Value, k: &str) -> Option<&'a str> {
+    v.get(k).and_then(Value::as_str)
+}
+
+/// A `UserPromptSubmit` whose prompt the harness wrote.
+pub fn harness_prompt(v: &Value) -> bool {
+    text(v, "hook_event_name") == Some("UserPromptSubmit")
+        && text(v, "prompt").is_some_and(|p| HARNESS_PROMPTS.iter().any(|m| p.contains(m)))
+}
+
+fn turn_file(v: &Value, dir: &Path) -> Option<std::path::PathBuf> {
+    clear_name(v).map(|c| dir.join(c.replacen("clear-", "turn-", 1)))
+}
+
+/// On a prompt: the turn starts now. Old stamps are swept on the way.
+fn stamp_turn(v: &Value, dir: &Path, now_unix: u64) -> io::Result<()> {
+    if text(v, "hook_event_name") != Some("UserPromptSubmit") {
+        return Ok(());
+    }
+    if let Ok(rd) = fs::read_dir(dir) {
+        let now = SystemTime::now();
+        for e in rd.flatten() {
+            let old = e
+                .metadata()
+                .and_then(|m| m.modified())
+                .is_ok_and(|t| now.duration_since(t).unwrap_or_default() > TURN_STAMP_MAX_AGE);
+            if old && e.file_name().to_string_lossy().starts_with("turn-") {
+                let _ = fs::remove_file(e.path());
+            }
+        }
+    }
+    match turn_file(v, dir) {
+        Some(f) => fs::write(f, now_unix.to_string()),
+        None => Ok(()),
+    }
+}
+
+/// On `Stop`: a `done` alert for a turn of at least [`DONE_MIN_TURN`]
+/// seconds that left nothing running. Never over an alert still waiting to
+/// be read (that one matters more).
+fn write_done(v: &Value, dir: &Path, now_unix: u64) -> io::Result<()> {
+    let Some(stamp) = turn_file(v, dir) else { return Ok(()) };
+    let started: Option<u64> = fs::read_to_string(&stamp).ok().and_then(|s| s.trim().parse().ok());
+    let Some(started) = started else { return Ok(()) };
+    if now_unix.saturating_sub(started) < DONE_MIN_TURN || dir.join("attention").exists() {
+        return Ok(());
+    }
+    let sid = text(v, "session_id").unwrap_or_default();
+    if tasks::has_running_tasks(sid, text(v, "transcript_path").map(Path::new)) {
+        return Ok(()); // it only yielded to background work: the harness resumes it
+    }
+    let _ = fs::remove_file(&stamp); // one "done" per turn
+    write_alert(v, dir)
 }
 
 /// jq's `//`: the value unless it is missing, null or false.
@@ -167,6 +242,9 @@ pub fn alert_json(v: &Value) -> Option<String> {
     out.insert("k".into(), Value::String(kind.as_str().into()));
     out.insert("m".into(), m);
     out.insert("s".into(), s);
+    if let Some(cwd) = text("cwd").filter(|c| !c.is_empty()) {
+        out.insert("p".into(), Value::String(tasks::project_of(cwd)));
+    }
     // jq escapes DEL; serde_json writes it raw. DEL only occurs inside strings.
     Some(Value::Object(out).to_string().replace('\u{7f}', "\\u007f") + "\n")
 }
@@ -191,6 +269,17 @@ fn question(tool_input: Option<&Value>) -> Option<Option<Value>> {
 }
 
 fn write_alert(v: &Value, dir: &Path) -> io::Result<()> {
+    // An idle prompt while the session's background work runs: it waits
+    // for its task, not for you.
+    let idle = text(v, "notification_type") == Some("idle_prompt");
+    if idle
+        && tasks::has_running_tasks(
+            text(v, "session_id").unwrap_or_default(),
+            text(v, "transcript_path").map(Path::new),
+        )
+    {
+        return Ok(());
+    }
     let Some(body) = alert_json(v) else { return Ok(()) };
     let tmp = dir.join(format!("attention.{}", std::process::id()));
     fs::write(&tmp, body)?;
@@ -251,6 +340,35 @@ mod tests {
 
     fn args(s: &str) -> Vec<String> {
         s.split_whitespace().map(str::to_owned).collect()
+    }
+
+    #[test]
+    fn done_after_a_long_turn_only() {
+        let d = dir("done");
+        fs::create_dir_all(d.join("repo/.git")).unwrap();
+        let cwd = d.join("repo").to_string_lossy().into_owned();
+        let prompt = json!({"hook_event_name": "UserPromptSubmit", "session_id": "s1", "prompt": "go", "cwd": cwd});
+        let stop = json!({"hook_event_name": "Stop", "session_id": "s1", "cwd": cwd});
+        run(Mode::parse(&args("clear event")), &prompt.to_string(), &d, 1000);
+        assert_eq!(fs::read_to_string(d.join("turn-s1")).unwrap(), "1000");
+        run(Mode::parse(&args("done event")), &stop.to_string(), &d, 1000 + DONE_MIN_TURN - 1);
+        assert!(!d.join("attention").exists(), "a short turn stays quiet");
+        run(Mode::parse(&args("done event")), &stop.to_string(), &d, 1000 + DONE_MIN_TURN);
+        let a: Value = serde_json::from_str(&fs::read_to_string(d.join("attention")).unwrap()).unwrap();
+        assert_eq!((a["k"].as_str(), a["s"].as_str(), a["p"].as_str()), (Some("done"), Some("s1"), Some("repo")));
+        assert!(!d.join("turn-s1").exists(), "one done per turn");
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn harness_prompts_are_not_you() {
+        let d = dir("harness");
+        fs::create_dir_all(&d).unwrap();
+        let p = json!({"hook_event_name": "UserPromptSubmit", "session_id": "s1",
+                       "prompt": "<task-notification>\n<task-id>x</task-id>"});
+        run(Mode::parse(&args("clear event")), &p.to_string(), &d, 1000);
+        assert!(!d.join("clear-s1").exists() && !d.join("turn-s1").exists() && !d.join("events.log").exists());
+        let _ = fs::remove_dir_all(&d);
     }
 
     #[test]

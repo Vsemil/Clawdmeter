@@ -81,7 +81,11 @@ The app writes one complete JSON object per write to RX
 - Usage: `s sr w wr st acct tp pd rd t tf c ok`. `sr`/`wr` = -1 means not
   started or unknown. `acct:"ent"` is a spend-capped account: `s` is spend %,
   `tp/pd/rd` the billing period. `{"ok":false}` means no data.
-- Attention: `b` (alert chime), `m` (ASCII message), `x` (clear).
+- Attention: `b` (alert chime), `m` (message: ASCII and Cyrillic), `x`
+  (clear), `k` (kind: caption, colour and melody on the device) and `pj`
+  (project). The app ranks alerts: a session waiting for you is never
+  replaced by a lower-ranked one, and a wait that loses the screen queues for
+  it (`AttentionState`).
 - Fast clock: `a` (activity 0–3), `e` + `es` (event `p`/`s`/`b` and its
   sequence), `n` (active sessions). `rp:1` marks a heartbeat replay, which the
   rate math skips.

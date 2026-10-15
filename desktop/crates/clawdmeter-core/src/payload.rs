@@ -56,7 +56,7 @@ pub struct Payload {
     /// 1 = beep for this alert.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub b: Option<u8>,
-    /// Attention message (ASCII).
+    /// Attention message (the device's glyphs: ASCII and Cyrillic).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub m: Option<String>,
     /// 1 = end the alert.
@@ -89,12 +89,19 @@ pub struct Payload {
     /// got and restarts into a new one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lg: Option<String>,
+    /// What the alert in `m` is about (`AlertKind::as_str`): the device shows
+    /// its own caption, colour and melody for it. Old firmware shows `m`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub k: Option<String>,
+    /// The project the alert is from.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pj: Option<String>,
 }
 
 /// Every key [`Payload`] can emit, in serialization order.
 pub const PAYLOAD_KEYS: &[&str] = &[
     "s", "sr", "w", "wr", "st", "acct", "tp", "pd", "rd", "t", "tf", "c", "ok", "b", "m", "x", "a", "e", "es", "n",
-    "rp", "lv", "aa", "lg",
+    "rp", "lv", "aa", "lg", "k", "pj",
 ];
 /// The fast-clock keys added in v0.4 (old firmware ignores them).
 pub const ADDITIVE_KEYS: &[&str] = &["a", "e", "es", "n", "rp"];
@@ -505,6 +512,8 @@ mod tests {
             lv: Some(3),
             aa: Some(120),
             lg: Some("ru".into()),
+            k: Some("done".into()),
+            pj: Some("clawdmeter".into()),
         };
         let v: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&pl.to_json()).unwrap();
         // serde_json's Map is sorted without preserve_order; check membership.

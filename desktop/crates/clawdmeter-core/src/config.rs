@@ -309,8 +309,9 @@ pub struct Settings {
 }
 
 /// `alert_on`: the alert kinds that show, as a comma list of `permission`,
-/// `question`, `idle`, `elicitation` (`none` for no alerts). Default: all
-/// but `idle`. Other notification types follow `permission`.
+/// `question`, `idle`, `elicitation`, `done` (`none` for no alerts).
+/// Default: all but `idle`. Other notification types follow `permission`;
+/// the calendar and outside messages have their own switches.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AlertOn {
     /// Permission requests (and unrecognised notification types).
@@ -321,24 +322,27 @@ pub struct AlertOn {
     pub idle: bool,
     /// MCP input requests.
     pub elicitation: bool,
+    /// A long turn finished.
+    pub done: bool,
 }
 
 impl Default for AlertOn {
     fn default() -> Self {
-        AlertOn { permission: true, question: true, idle: false, elicitation: true }
+        AlertOn { permission: true, question: true, idle: false, elicitation: true, done: true }
     }
 }
 
 impl AlertOn {
     /// Parse the comma list; unknown words are ignored.
     pub fn parse(v: &str) -> Self {
-        let mut a = AlertOn { permission: false, question: false, idle: false, elicitation: false };
+        let mut a = AlertOn { permission: false, question: false, idle: false, elicitation: false, done: false };
         for w in v.split(',').map(|w| w.trim().to_ascii_lowercase()) {
             match w.as_str() {
                 "permission" => a.permission = true,
                 "question" => a.question = true,
                 "idle" => a.idle = true,
                 "elicitation" => a.elicitation = true,
+                "done" => a.done = true,
                 _ => {}
             }
         }
@@ -352,6 +356,7 @@ impl AlertOn {
             (self.question, "question"),
             (self.idle, "idle"),
             (self.elicitation, "elicitation"),
+            (self.done, "done"),
         ]
         .into_iter()
         .filter_map(|(on, w)| on.then_some(w))
@@ -371,6 +376,8 @@ impl AlertOn {
             K::Question => self.question,
             K::Idle => self.idle,
             K::Elicitation => self.elicitation,
+            K::Done => self.done,
+            K::Calendar | K::CalendarStart | K::Message => true,
         }
     }
 }
@@ -560,7 +567,7 @@ mod tests {
         assert!(d.allows(AlertKind::Question) && !d.allows(AlertKind::Idle));
         assert!(d.allows(AlertKind::Other), "unknown types follow permission");
         let s = settings("alert_on = idle, Question\n").alert_on;
-        assert_eq!(s, AlertOn { permission: false, question: true, idle: true, elicitation: false });
+        assert_eq!(s, AlertOn { permission: false, question: true, idle: true, elicitation: false, done: false });
         assert!(!s.allows(AlertKind::Other));
         assert_eq!(AlertOn::parse(&s.as_config()), s);
         let none = settings("alert_on = none\n").alert_on;
@@ -574,7 +581,7 @@ mod tests {
         assert!(cfg.get("alert_on").is_none(), "defaults stay out of the file");
         s.alert_on.idle = true;
         s.apply_to(&mut cfg, &paths());
-        assert_eq!(cfg.get("alert_on"), Some("permission, question, idle, elicitation"));
+        assert_eq!(cfg.get("alert_on"), Some("permission, question, idle, elicitation, done"));
     }
 
     // Ported from the legacy daemon test test_bash_heartbeat.sh (interval parsing).

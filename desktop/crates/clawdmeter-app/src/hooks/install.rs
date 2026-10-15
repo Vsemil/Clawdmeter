@@ -34,7 +34,7 @@ pub struct HookSpec {
 pub const HOOKS: [HookSpec; 5] = [
     HookSpec { event: "UserPromptSubmit", matcher: None, args: "clear event" },
     HookSpec { event: "PostToolUse", matcher: None, args: "clear event" },
-    HookSpec { event: "Stop", matcher: None, args: "event" },
+    HookSpec { event: "Stop", matcher: None, args: "done event" },
     HookSpec { event: "Notification", matcher: None, args: "alert event" },
     HookSpec { event: "PreToolUse", matcher: Some("AskUserQuestion"), args: "alert event" },
 ];
@@ -145,7 +145,7 @@ pub fn owner(cmd: &str) -> Owner {
         return Owner::Foreign;
     }
     let args: Vec<&str> = words.collect();
-    if !matches!(args.first(), Some(&"alert" | &"clear" | &"event")) {
+    if !matches!(args.first(), Some(&"alert" | &"clear" | &"event" | &"done")) {
         return Owner::Foreign;
     }
     if !basename(&exe).starts_with("clawdmeter") {
@@ -562,7 +562,7 @@ mod tests {
     fn fresh_install() {
         let out = merge(None, exe()).unwrap();
         let j = v(&out);
-        assert_eq!(j["hooks"]["Stop"][0]["hooks"][0]["command"], format!("{EXE} hook event"));
+        assert_eq!(j["hooks"]["Stop"][0]["hooks"][0]["command"], format!("{EXE} hook done event"));
         assert_eq!(j["hooks"]["PreToolUse"][0]["matcher"], "AskUserQuestion");
         assert_eq!(j["hooks"]["PostToolUse"][0]["hooks"][0]["type"], "command");
         assert_eq!(status(Some(&out), exe()), HookStatus::Installed);
@@ -615,7 +615,7 @@ mod tests {
         let j = v(&merge(Some(&dup), exe()).unwrap());
         let stop = j["hooks"]["Stop"].as_array().unwrap();
         assert_eq!(stop.len(), 2);
-        assert_eq!(stop[0]["hooks"][0]["command"], format!("{EXE} hook event"));
+        assert_eq!(stop[0]["hooks"][0]["command"], format!("{EXE} hook done event"));
         assert_eq!(stop[1]["hooks"].as_array().unwrap().len(), 1);
         assert_eq!(stop[1]["hooks"][0]["command"], "say done");
     }

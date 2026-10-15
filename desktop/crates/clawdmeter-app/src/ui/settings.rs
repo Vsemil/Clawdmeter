@@ -1017,11 +1017,14 @@ impl SettingsView {
     /// stay installed as they are; the app drops the kinds that are off.
     fn alert_kinds(&self, t: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
         type Pick = fn(&mut AlertOn) -> &mut bool;
-        let rows: [(&'static str, &'static str, &'static str, Pick); 4] = [
+        let rows: [(&'static str, &'static str, &'static str, Pick); 5] = [
             ("alert-permission", "Tool approvals", "Claude needs permission to run a tool.", |a| &mut a.permission),
             ("alert-question", "Questions", "Claude has a question for you.", |a| &mut a.question),
             ("alert-idle", "Idle sessions", "Claude has been waiting for your next prompt.", |a| &mut a.idle),
             ("alert-elicitation", "MCP requests", "An MCP server needs information from you.", |a| &mut a.elicitation),
+            ("alert-done", "Finished turns", "Claude finished a turn that took longer than 45 seconds.", |a| {
+                &mut a.done
+            }),
         ];
         let mut list = div()
             .flex()
