@@ -22,6 +22,7 @@
 #include "perf.h"
 #include "pair_hold.h"
 #include "alert_kind.h"
+#include "ui_text.h"
 
 #include "hal/board_caps.h"
 #include "hal/display_hal.h"
@@ -506,6 +507,21 @@ void loop() {
                 director_alert(usage.alert_msg);
             }
             if (usage.alert_clear) director_alert_clear();
+            // The device's own news about the session window, when nothing
+            // from the app is up: the limit is close (80 / 95 %), or it
+            // refilled. Its melody follows the reset chime's opt-in (`c`).
+            if (!director_alert_active() && (sig.limit_crossed || session_reset)) {
+                const AlertKind own = sig.limit_crossed ? AK_LIMIT : AK_RESET;
+                char pct[8] = "";
+                if (sig.limit_crossed) snprintf(pct, sizeof(pct), "%d%%", sig.limit_crossed);
+                const char *act_a, *act_b;
+                alert_kind_acts(own, &act_a, &act_b);
+                mascot_attention_acts(act_a, act_b);
+                ui_set_alert_style(own, pct);
+                Serial.printf("usage: %s\n", own == AK_LIMIT ? "limit close" : "limits refreshed");
+                director_alert_local(S->alert_caption[own], own == AK_LIMIT ? 60000 : 20000);
+                if (own == AK_LIMIT && usage.chime) sound_hal_melody(MELODY_LIMIT);
+            }
             if (g_after != g_before)
                 Serial.printf("usage rate: group %d -> %d (s=%.2f%%)\n",
                     g_before, g_after, usage.session_pct);

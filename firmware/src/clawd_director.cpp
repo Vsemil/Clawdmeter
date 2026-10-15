@@ -43,6 +43,8 @@ static bool     notice_wake = false;  // B_FACE_HOME: blink first (he noticed yo
 // Attention
 static bool     attention_on = false;
 static bool     attention_dismissed = false;  // ended here; the app hasn't heard
+static bool     attention_local = false;      // the device raised it: nothing to tell the app
+static uint32_t attention_local_ms = 0;       // ...and it ends after this long (0: the tuning's)
 static bool     pairing_touch = false;        // director_set_pairing_touch
 static uint32_t attention_since = 0;
 static bool     attn_anim_done = false;       // Clawd's part of the alert is over; it stays up
@@ -154,18 +156,25 @@ static void to_meters(bool noticed) {
 }
 
 // ─── Attention ───────────────────────────────────────────────────────────────
+// How long the alert on screen lasts with nobody ending it: the tuning's, or
+// the device's own alert's.
+static uint32_t alert_timeout(void) {
+    return attention_local && attention_local_ms ? attention_local_ms : clawd_tuning().alert_timeout_ms;
+}
+
 // Clawd's part of an alert: he points and waves for the attention
 // animation's time (clawd_attn_anim), then sits in his seat while the alert
 // itself stays up until a tap, a clear or its timeout.
 static bool attn_anim_running(uint32_t now) {
     return !attn_anim_done &&
-           (uint32_t)(now - attention_since) < clawd_attn_anim_ms(clawd_attn_anim(), clawd_tuning().alert_timeout_ms);
+           (uint32_t)(now - attention_since) < clawd_attn_anim_ms(clawd_attn_anim(), alert_timeout());
 }
 
 static void end_attention(AttnEnd how) {
     if (!attention_on) return;
     attention_on = false;
-    if (attention_end_tells_host(how)) attention_dismissed = true;
+    if (attention_end_tells_host(how) && !attention_local) attention_dismissed = true;
+    attention_local = false;
     const bool engaged = attn_engaged || (int32_t)(last_engagement - attn_mark) > 0;
     resume_screensaver = attention_resumes_screensaver(attn_from, how, engaged);
     ui_set_alert_text(NULL);
@@ -177,6 +186,7 @@ static void end_attention(AttnEnd how) {
 }
 
 void director_alert(const char* message) {
+    attention_local = false;                  // the app's alert (director_alert_local sets it after)
     if (!attention_on) {
         // Remember what it interrupts, so it can return there. A new alert
         // while the last one is still leaving for the screensaver inherits
@@ -211,6 +221,15 @@ void director_alert(const char* message) {
 }
 
 void director_alert_clear(void) { end_attention(ATTN_END_CLEAR); }
+
+void director_alert_local(const char* message, uint32_t timeout_ms) {
+    if (attention_on) return;             // the app's alert outranks the device's own
+    director_alert(message);
+    attention_local = true;
+    attention_local_ms = timeout_ms;
+}
+
+bool director_alert_active(void) { return attention_on; }
 
 bool director_take_dismissed(void) {
     const bool d = attention_dismissed;
@@ -563,7 +582,7 @@ static void run_attention(uint32_t now) {
             }
             if (mascot_away()) mascot_return(-1, 150);   // arrived here with him out of sight
         }
-        if ((uint32_t)(now - attention_since) >= clawd_tuning().alert_timeout_ms)
+        if ((uint32_t)(now - attention_since) >= alert_timeout())
             end_attention(ATTN_END_TIMEOUT);
         return;
     }

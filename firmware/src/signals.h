@@ -23,6 +23,7 @@ struct SignalsUpdate {
                               // or a future char; valid when event_fired
     uint32_t event_seq;       // the `es` that fired
     bool     sessions_changed;// `n` changed (including first sight)
+    int      limit_crossed;   // session % rose through 80 or 95 (the higher one), else 0
     int      group_before;    // usage_rate group before this payload
     int      group_after;     // ... and after (activity lift included)
 };

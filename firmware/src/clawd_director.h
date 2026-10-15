@@ -33,6 +33,10 @@ void director_on_payload(const UsageData* d, const SignalsUpdate* sig);
 void director_alert(const char* message);   // attention hook fired
 void director_alert_clear(void);            // the session moved on
 bool director_take_dismissed(void);         // an alert ended on the device since the last call
+// The device's own alert (the limit thresholds): like director_alert, but
+// ending it doesn't tell the app (the app has nothing up to dismiss).
+void director_alert_local(const char* message, uint32_t timeout_ms);
+bool director_alert_active(void);           // an alert (either kind) is up
 
 // Any touch press at screen x (wired internally to LVGL). On the meters it's
 // tapping the aquarium: the face comes up, curious, for a while (a tap on it

@@ -8,6 +8,8 @@ static bool     have_seq   = false;
 static uint32_t last_seq   = 0;
 static char     last_event = '\0';
 static int      sessions   = -1;
+static float    last_pct   = -1.0f;   // the last real session %, for the limit thresholds
+static const float LIMIT_STEPS[] = { 80.0f, 95.0f };
 
 void signals_clear(void) {
     hooks_seen = false;
@@ -15,6 +17,7 @@ void signals_clear(void) {
     last_seq = 0;
     last_event = '\0';
     sessions = -1;
+    last_pct = -1.0f;
     usage_rate_clear();
 }
 
@@ -35,6 +38,15 @@ SignalsUpdate signals_ingest_at(const UsageData* d, uint32_t now_ms) {
     // reset detector (it would read as a fresh window and fire the chime).
     const bool real_sample = d->ok && !d->replay;
     u.session_reset = usage_rate_sample_at(now_ms, d->session_pct, !real_sample);
+
+    // The limit is close: a real sample rising through a threshold. The
+    // first sample after boot is only the baseline (nothing *rose*).
+    if (real_sample) {
+        if (last_pct >= 0.0f)
+            for (float t : LIMIT_STEPS)
+                if (last_pct < t && d->session_pct >= t) u.limit_crossed = (int)t;
+        last_pct = d->session_pct;
+    }
 
     if (d->has_event_seq) {
         hooks_seen = true;

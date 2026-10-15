@@ -105,6 +105,27 @@ static void test_no_data_beat_is_not_a_sample(void) {
     TEST_ASSERT_EQUAL_INT(RATE_IDLE, usage_rate_base_group_at(3000 + 15 * MIN));
 }
 
+// The limit is close: a real sample rising through 80 or 95. Boot's first
+// sample is only the baseline; replays and no-data beats never count.
+static void test_limit_thresholds(void) {
+    UsageData d = parse("{\"s\":85,\"ok\":true}");
+    TEST_ASSERT_EQUAL_INT(0, signals_ingest_at(&d, 1000).limit_crossed);      // baseline
+    d = parse("{\"s\":90,\"ok\":true}");
+    TEST_ASSERT_EQUAL_INT(0, signals_ingest_at(&d, 2000).limit_crossed);      // already past 80
+    d = parse("{\"s\":97,\"rp\":1,\"ok\":true}");
+    TEST_ASSERT_EQUAL_INT(0, signals_ingest_at(&d, 3000).limit_crossed);      // a replay
+    d = parse("{\"s\":96,\"ok\":true}");
+    TEST_ASSERT_EQUAL_INT(95, signals_ingest_at(&d, 4000).limit_crossed);
+    d = parse("{\"s\":3,\"ok\":true}");
+    signals_ingest_at(&d, 5000);                                              // a new window
+    d = parse("{\"s\":96,\"ok\":true}");
+    TEST_ASSERT_EQUAL_INT(95, signals_ingest_at(&d, 6000).limit_crossed);     // both at once: the higher
+    d = parse("{\"ok\":false}");
+    signals_ingest_at(&d, 7000);
+    d = parse("{\"s\":97,\"ok\":true}");
+    TEST_ASSERT_EQUAL_INT(0, signals_ingest_at(&d, 8000).limit_crossed);      // no-data didn't reset it
+}
+
 static void test_sessions_change(void) {
     UsageData d = parse("{\"n\":2}");
     TEST_ASSERT_TRUE(signals_ingest_at(&d, 1000).sessions_changed);
@@ -126,5 +147,6 @@ int main(void) {
     RUN_TEST(test_session_reset_through_signals);
     RUN_TEST(test_no_data_beat_is_not_a_sample);
     RUN_TEST(test_sessions_change);
+    RUN_TEST(test_limit_thresholds);
     return UNITY_END();
 }
