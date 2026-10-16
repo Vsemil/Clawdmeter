@@ -49,10 +49,14 @@ this firmware behaves like upstream when the app doesn't send them.
   device. `tools/calnext` is the EventKit helper.
 - Today's next meeting (`nm`) takes the title's place.
 
-## Quiet and resting
+## Sound and resting
 
-- Quiet hours (`quiet_hours`, `quiet_volume`): the app sends the device's
-  sound level (`vo`); there is no boot ding.
+- A vertical swipe on the panel sets the device's own volume, 10 % per step,
+  shown on the status line. A ding plays at the new level and the level is
+  kept in NVS (`volume_swipe.cpp`). A touch now taps on its release, so a
+  swipe never taps.
+- Quiet hours (`quiet_hours`, `quiet_volume`): the app sends `vo`, which
+  scales that volume; there is no boot ding.
 - The status line says "Resting" when Claude isn't working, and the screen
   goes dark after 5 minutes of it with nobody at the device, USB power or not.
 
@@ -61,5 +65,5 @@ this firmware behaves like upstream when the app doesn't send them.
 - `tools/packaging/macos-app.sh` builds and installs `Clawdmeter.app` for this
   Mac, signed with a local certificate when there is one so macOS keeps its
   Bluetooth and calendar grants across rebuilds.
-- Serial QA commands `lang`, `alert_kind`, `melody`; `SIM_LANG` for the
+- Serial QA commands `lang`, `alert_kind`, `melody`, `volume`; `SIM_LANG` for the
   simulator.

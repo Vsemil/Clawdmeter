@@ -4,6 +4,38 @@
 
 Clawdmeter shows your Claude Code usage limits on an ESP32 development board on your desk. Clawd lives on the device. He reacts to prompts, cheers you on, and alerts you when a session needs your attention.
 
+## What this fork adds
+
+This fork of [HermannBjorgvin/Clawdmeter](https://github.com/HermannBjorgvin/Clawdmeter)
+turns the device into a desk-side Claude Code pager, in Russian or English.
+It runs on the Waveshare ESP32-S3-Touch-AMOLED-2.16 with the macOS app. The
+full list is in [CHANGELOG-FORK.md](CHANGELOG-FORK.md).
+
+- **Typed alerts.** The device has a caption, colour and melody for each
+  kind: Claude waits for your reply, needs a permission, or finished a long
+  turn. The project name is on screen. Background tasks and agents don't
+  raise false alarms.
+- **Alerts that don't overwrite each other.** A session waiting for you
+  outranks a finished turn. A wait that loses the screen queues and comes
+  back without ringing again.
+- **Meeting reminders.** Alerts come 15 and 5 minutes before a meeting and
+  when it starts. The source is the macOS calendar (EventKit) or an ICS feed.
+  The title shows today's next meeting.
+- **Russian interface.** Set `lang = ru|en` in the app config. Cyrillic
+  fonts sit behind every UI font.
+- **More from the limits.** You get a third gauge for the model-scoped
+  weekly limit (e.g. Fable) and the wall-clock reset time. The status line
+  says why the numbers are stale.
+- **Quiet and resting.** A vertical swipe on the screen sets the volume.
+  Quiet hours make it barely audible at night. The status line says
+  "Resting" when Claude isn't working, and the screen goes dark after 5
+  minutes of that.
+- **An MCP server.** `clawdmeter mcp` lets an assistant put its own message
+  on the device.
+
+The releases linked below are upstream's. To run this fork, build the app
+from source; on macOS, `tools/packaging/macos-app.sh` builds and installs it.
+
 ## Supported boards
 
 ### Flagship
