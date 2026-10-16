@@ -23,8 +23,11 @@ void touch_hal_init(void) {
         return;
     }
     touch.setMaxCoordinates(LCD_WIDTH, LCD_HEIGHT);
-    touch.setSwapXY(true);
-    touch.setMirrorXY(true, false);
+    // The CST9220 already reports in the panel's frame: a swap plus an X
+    // mirror here turned every point 90° (a vertical swipe read as a
+    // horizontal one). Measured by tapping the corners in quadrant 2.
+    touch.setSwapXY(false);
+    touch.setMirrorXY(false, false);
     pinMode(TP_INT, INPUT_PULLUP);
     attachInterrupt(TP_INT, touch_isr, FALLING);
     Serial.println("Touch init OK");
