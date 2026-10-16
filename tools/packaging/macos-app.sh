@@ -39,7 +39,15 @@ cat > "$app/Contents/Info.plist" <<PLIST
 </dict></plist>
 PLIST
 plutil -lint "$app/Contents/Info.plist"
-codesign --force --sign - "$app"
+# A stable signing identity keeps the Bluetooth and calendar grants across
+# rebuilds (macOS ties them to the designated requirement: an ad-hoc one is
+# the build's hash, a certificate's is "this identifier, this certificate").
+# Any code-signing certificate named below in the keychain will do, a
+# self-signed one included; without one, ad-hoc.
+identity="$(security find-certificate -c "${CLAWDMETER_SIGN_CERT:-Clawdmeter Local Signing}" -Z 2>/dev/null \
+    | awk '/SHA-1/ {print $3; exit}')"
+codesign --force --sign "${identity:--}" "$app"
+codesign -dr - "$app" 2>&1 | tail -1
 rm -rf "$dest/Clawdmeter.app"
 ditto "$app" "$dest/Clawdmeter.app"
 rm -rf "$stage"
