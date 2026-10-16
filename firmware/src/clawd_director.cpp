@@ -312,8 +312,12 @@ void director_set_liveliness(int level) {
     mascot_autonomy(beat == B_HOME && !minimal && t.idle_acts);
 }
 
+static bool tap_suppressed = false;
+void director_suppress_tap(void) { tap_suppressed = true; }
+
 static void indev_cb(lv_event_t* e) {
     (void)e;
+    if (tap_suppressed) { tap_suppressed = false; return; }   // that was a swipe
     lv_point_t p = { 0, 0 };
     if (touch_indev) lv_indev_get_point(touch_indev, &p);
     director_tap(p.x);
@@ -390,10 +394,11 @@ void director_init(void) {
     last_engagement = now_ms();
     apply_minimal(minimal_mode());
     go(B_HOME);
-    // Every press on the panel, wherever it lands, is a tap for the
-    // director. PRESSED (not CLICKED) so the reaction starts on the next frame.
+    // Every touch on the panel, wherever it lands, is a tap for the
+    // director, on its release: a touch that turns into a vertical swipe sets
+    // the volume instead (main.cpp, volume_swipe.h) and never taps.
     touch_indev = lv_indev_get_next(NULL);
-    if (touch_indev) lv_indev_add_event_cb(touch_indev, indev_cb, LV_EVENT_PRESSED, NULL);
+    if (touch_indev) lv_indev_add_event_cb(touch_indev, indev_cb, LV_EVENT_RELEASED, NULL);
 }
 
 DirectorRoom director_room(void) { return face_visible() ? ROOM_FACE : ROOM_METERS; }

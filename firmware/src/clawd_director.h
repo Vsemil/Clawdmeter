@@ -31,6 +31,9 @@ void director_tick(void);
 // Per parsed payload, after signals_ingest().
 void director_on_payload(const UsageData* d, const SignalsUpdate* sig);
 void director_alert(const char* message);   // attention hook fired
+// The touch that's lifting was a swipe (the volume), not a tap: the
+// director ignores its release.
+void director_suppress_tap(void);
 void director_alert_clear(void);            // the session moved on
 bool director_take_dismissed(void);         // an alert ended on the device since the last call
 // The device's own alert (the limit thresholds): like director_alert, but

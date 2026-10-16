@@ -13,7 +13,7 @@ typedef struct _lv_event_t lv_event_t;
 typedef struct _lv_display_t lv_display_t;
 typedef struct { int32_t x, y; } lv_point_t;
 typedef void (*lv_event_cb_t)(lv_event_t*);
-enum { LV_EVENT_PRESSED = 1 };
+enum { LV_EVENT_PRESSED = 1, LV_EVENT_RELEASED = 2 };
 
 static inline lv_indev_t* lv_indev_get_next(lv_indev_t*) { return (lv_indev_t*)0; }
 static inline void lv_indev_add_event_cb(lv_indev_t*, lv_event_cb_t, int, void*) {}

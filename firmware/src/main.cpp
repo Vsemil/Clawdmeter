@@ -22,6 +22,7 @@
 #include "perf.h"
 #include "pair_hold.h"
 #include "alert_kind.h"
+#include "volume_swipe.h"
 #include "melody.h"
 #include "ui_text.h"
 
@@ -75,6 +76,14 @@ static void rounder_cb(lv_event_t* e) {
 // touch-hold re-pair on boards without a PWR button.
 static bool touch_down = false;
 
+// The device's loudness: its own (a swipe, NVS) scaled by the app's
+// quiet hours (`vo`).
+static uint8_t app_volume = 100;
+static VolumeSwipe volume_swipe = {};
+static void apply_sound_level(void) {
+    sound_hal_set_level((uint8_t)(volume_get() * app_volume / 100));
+}
+
 static void my_touch_cb(lv_indev_t* indev, lv_indev_data_t* data) {
     uint16_t x, y;
     bool pressed;
@@ -103,6 +112,21 @@ static void my_touch_cb(lv_indev_t* indev, lv_indev_data_t* data) {
         touch_was = raw_pressed;
     } else if (idle_is_asleep()) {
         pressed = false;
+    }
+
+    // A vertical swipe sets the volume (volume_swipe.h); its release isn't a tap.
+    if (pressed && !touch_down) {
+        volume_swipe_press(&volume_swipe, y, (uint8_t)volume_get());
+    } else if (pressed && volume_swipe_move(&volume_swipe, y)) {
+        char note[48];
+        snprintf(note, sizeof(note), S->volume_fmt, volume_swipe.level);
+        ui_flash_status(note, 1500);
+        sound_hal_set_level((uint8_t)(volume_swipe.level * app_volume / 100));
+    } else if (!pressed && touch_down && volume_swipe_release(&volume_swipe)) {
+        director_suppress_tap();
+        volume_set(volume_swipe.level);
+        apply_sound_level();
+        sound_hal_chime();                 // hear the new level
     }
 
     touch_down = pressed;
@@ -228,6 +252,11 @@ static void check_serial_cmd() {
                 Serial.flush();
                 if (cmd_buf[4] == ' ') lang_pref_set(cmd_buf + 5);
             }
+            else if (strcmp(cmd_buf, "volume") == 0 || strncmp(cmd_buf, "volume ", 7) == 0) {
+                // QA: `volume [0-100]`, the device's own loudness (as a swipe sets it; kept in NVS).
+                if (cmd_buf[6] == ' ') { volume_set(atoi(cmd_buf + 7)); apply_sound_level(); }
+                Serial.printf("{\"volume\":%d}\n", volume_get());
+            }
             else if (strncmp(cmd_buf, "melody ", 7) == 0) {
                 // QA: `melody <perm|question|input|done|limit|cal|calstart|ding>`.
                 const Melody m = melody_by_name(cmd_buf + 7);
@@ -317,6 +346,8 @@ void setup() {
     ui_update_battery(power_hal_battery_pct(), power_hal_is_charging(), power_hal_is_vbus_in());
     director_init();    // rooms + beats; boots on the meters (home)
     clawd_prefs_init();  // the saved liveliness and attention animation, before the app says otherwise
+    volume_pref_init();
+    apply_sound_level();
 
     Serial.printf("Dashboard ready (%s, %dx%d) %lu ms after boot, waiting for data on BLE...\n",
         board_caps().name, W, H, (unsigned long)millis());
@@ -528,7 +559,8 @@ void loop() {
             if (usage.liveliness > 0) liveliness_set(usage.liveliness);
             if (usage.attn_anim_s >= 0) attn_anim_set(usage.attn_anim_s);
             lang_pref_set(usage.lang);   // restarts on a change
-            sound_hal_set_level(usage.volume_pct < 0 ? 100 : (uint8_t)usage.volume_pct);
+            app_volume = usage.volume_pct < 0 ? 100 : (uint8_t)usage.volume_pct;
+            apply_sound_level();
             director_on_payload(&usage, &sig);
             if (usage.alert_msg[0]) {
                 Serial.println("attention — mascot");

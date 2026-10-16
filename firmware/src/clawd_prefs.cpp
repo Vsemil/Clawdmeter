@@ -46,6 +46,27 @@ void attn_anim_set(int seconds) {
 
 int attn_anim_get(void) { return clawd_attn_anim(); }
 
+static int volume_pct = 100;
+
+void volume_pref_init(void) {
+    Preferences prefs;
+    prefs.begin("clawdmeter", true);
+    volume_pct = prefs.getUChar("volume", 100);
+    prefs.end();
+    if (volume_pct > 100) volume_pct = 100;
+    Serial.printf("Volume: %d%%\n", volume_pct);
+}
+
+int volume_get(void) { return volume_pct; }
+
+void volume_set(int pct) {
+    pct = pct < 0 ? 0 : pct > 100 ? 100 : pct;
+    if (pct == volume_pct) return;
+    volume_pct = pct;
+    save("volume", (uint8_t)pct);
+    Serial.printf("Volume: %d%%\n", pct);
+}
+
 void lang_pref_init(void) {
     Preferences prefs;
     prefs.begin("clawdmeter", true);

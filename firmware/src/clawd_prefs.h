@@ -15,3 +15,9 @@ int  attn_anim_get(void);
 // language at boot, so a change is saved and the device restarts into it.
 void lang_pref_init(void);            // before ui_init(): select the saved table
 void lang_pref_set(const char* code); // "" or unknown: no change
+
+// The device's own loudness, 0..100 (a vertical swipe sets it,
+// volume_swipe.h), kept in NVS; default 100. The app's quiet hours scale it.
+void volume_pref_init(void);
+int  volume_get(void);
+void volume_set(int pct);              // saved only when it changes

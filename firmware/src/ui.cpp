@@ -459,6 +459,8 @@ static void init_usage_screen(lv_obj_t* scr) {
 static bool alert_active = false;
 static AlertKind alert_kind = AK_NONE;   // ui_set_alert_style
 static char alert_project[96] = "";
+static char     flash_text[48] = "";      // ui_flash_status
+static uint32_t flash_until = 0;
 static const char* still_shown = nullptr;   // minimal mode: status word on screen
 
 // ======== Public API ========
@@ -719,6 +721,14 @@ void ui_tick_anim(void) {
 
     if (alert_active) return;          // the status line holds the alert message
 
+    if (flash_text[0]) {               // a short note (the volume) holds the line
+        if ((int32_t)(now - flash_until) < 0) return;
+        flash_text[0] = 0;
+        anim_last_ms = 0;
+        still_shown = nullptr;
+        frozen_shown = nullptr;
+    }
+
     if (still) {
         // One glyph, one word per state; redrawn only when it changes.
         const char* text = !s_ble_connected ? S->st_waiting
@@ -815,6 +825,13 @@ void ui_update_battery(int percent, bool charging, bool usb_power) {
     }
     lv_image_set_src(battery_img, &battery_dscs[idx]);
     apply_battery_visibility();
+}
+
+void ui_flash_status(const char* text, uint32_t ms) {
+    snprintf(flash_text, sizeof(flash_text), "%s", text);
+    flash_until = lv_tick_get() + ms;
+    if (alert_active || !lbl_anim) return;
+    lv_label_set_text(lbl_anim, flash_text);
 }
 
 void ui_set_alert_style(uint8_t kind, const char* project) {

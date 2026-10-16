@@ -59,6 +59,7 @@ struct UiText {
     const char* st_no_data;
     const char* st_stale;
     const char* st_resting;        // connected, Claude isn't working
+    const char* volume_fmt;        // "Volume %d%%" while a swipe sets it
     // Why the numbers aren't fresh (`er`), in place of st_stale/st_no_data
     // where it fits: auth, token, rate, net, app.
     const char* st_err[5];

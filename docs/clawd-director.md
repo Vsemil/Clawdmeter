@@ -303,6 +303,13 @@ grid cells on the glass at his floor row). None of them spends time walking
 where there is no glass, and nobody starts at the bounding box's edge.
 Rectangular panels are unchanged. Unit-tested in `test/test_splash_geometry`.
 
+## Taps and the volume swipe
+
+A tap reaches the director on its release (`LV_EVENT_RELEASED`). A touch
+that moves 24 px or more vertically is a volume swipe instead (main.cpp,
+`volume_swipe.h`): up is louder, down quieter, 10 % per 36 px, shown on the
+status line; its release plays the ding at the new level and never taps.
+
 ## Alert dismissal and expiry
 
 A tap or the device's 2-minute attention timeout ends the local alert and
