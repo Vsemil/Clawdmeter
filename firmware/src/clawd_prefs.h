@@ -17,7 +17,7 @@ void lang_pref_init(void);            // before ui_init(): select the saved tabl
 void lang_pref_set(const char* code); // "" or unknown: no change
 
 // The device's own loudness, 0..100 (a vertical swipe sets it,
-// volume_swipe.h), kept in NVS; default 100. The app's quiet hours scale it.
-void volume_pref_init(void);
+// volume_swipe.h), kept in NVS and loaded by clawd_prefs_init(); default
+// 100. The app's quiet hours scale it.
 int  volume_get(void);
 void volume_set(int pct);              // saved only when it changes

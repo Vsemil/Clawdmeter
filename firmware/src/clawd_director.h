@@ -31,9 +31,6 @@ void director_tick(void);
 // Per parsed payload, after signals_ingest().
 void director_on_payload(const UsageData* d, const SignalsUpdate* sig);
 void director_alert(const char* message);   // attention hook fired
-// The touch that's lifting was a swipe (the volume), not a tap: the
-// director ignores its release.
-void director_suppress_tap(void);
 void director_alert_clear(void);            // the session moved on
 bool director_take_dismissed(void);         // an alert ended on the device since the last call
 // The device's own alert (the limit thresholds): like director_alert, but
@@ -41,7 +38,8 @@ bool director_take_dismissed(void);         // an alert ended on the device sinc
 void director_alert_local(const char* message, uint32_t timeout_ms);
 bool director_alert_active(void);           // an alert (either kind) is up
 
-// Any touch press at screen x (wired internally to LVGL). On the meters it's
+// A touch released at screen x, wherever it landed (main.cpp's touch read;
+// a vertical swipe sets the volume instead and never taps). On the meters it's
 // tapping the aquarium: the face comes up, curious, for a while (a tap on it
 // sends it back); anywhere else it means "show me the meters".
 void director_tap(int x);

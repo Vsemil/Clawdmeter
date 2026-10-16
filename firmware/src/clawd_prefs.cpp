@@ -2,21 +2,25 @@
 #include "clawd_director.h"
 #include "clawd_policy.h"
 #include "ui_text.h"
+#include "volume_swipe.h"
 #include "hal/board_info_hal.h"
 #include <Preferences.h>
 #include <Arduino.h>
 #include <string.h>
+
+static uint8_t volume_pct = 100;
 
 void clawd_prefs_init(void) {
     Preferences prefs;
     prefs.begin("clawdmeter", true);
     const int lively = prefs.getUChar("lively", CLAWD_LIVELINESS_DEFAULT);
     const int attn = prefs.getUChar("attn_anim", CLAWD_ATTN_ANIM_DEFAULT_S);
+    volume_pct = volume_clamp(prefs.getUChar("volume", 100));
     prefs.end();
     director_set_liveliness(clawd_liveliness_clamp(lively));
     director_set_attn_anim(clawd_attn_anim_clamp(attn));
-    Serial.printf("Clawd prefs init: liveliness %d, attention animation %d s\n",
-                  clawd_liveliness(), clawd_attn_anim());
+    Serial.printf("Clawd prefs init: liveliness %d, attention animation %d s, volume %d%%\n",
+                  clawd_liveliness(), clawd_attn_anim(), volume_pct);
 }
 
 static void save(const char* key, uint8_t v) {
@@ -46,23 +50,12 @@ void attn_anim_set(int seconds) {
 
 int attn_anim_get(void) { return clawd_attn_anim(); }
 
-static int volume_pct = 100;
-
-void volume_pref_init(void) {
-    Preferences prefs;
-    prefs.begin("clawdmeter", true);
-    volume_pct = prefs.getUChar("volume", 100);
-    prefs.end();
-    if (volume_pct > 100) volume_pct = 100;
-    Serial.printf("Volume: %d%%\n", volume_pct);
-}
-
 int volume_get(void) { return volume_pct; }
 
 void volume_set(int pct) {
-    pct = pct < 0 ? 0 : pct > 100 ? 100 : pct;
+    pct = volume_clamp(pct);
     if (pct == volume_pct) return;
-    volume_pct = pct;
+    volume_pct = (uint8_t)pct;
     save("volume", (uint8_t)pct);
     Serial.printf("Volume: %d%%\n", pct);
 }

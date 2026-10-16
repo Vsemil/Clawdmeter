@@ -33,6 +33,6 @@ void ui_set_alert_text(const char* message);
 // empty): a known kind shows its caption, coloured, then the project,
 // instead of the message. Set before director_alert(); kept until the next.
 void ui_set_alert_style(uint8_t kind, const char* project);
-// A short note on the status line ("Volume 60%") for `ms`, unless an alert
-// holds it.
+// A short note on the status line ("Volume 60%") for `ms`; dropped while an
+// alert holds the line.
 void ui_flash_status(const char* text, uint32_t ms);

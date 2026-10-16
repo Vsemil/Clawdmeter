@@ -34,7 +34,7 @@ void chime_play(void);
 // without PSRAM the ding plays instead. No-op while anything plays.
 void chime_play_melody(uint8_t melody);
 
-// Loudness as a share of the tuned level, 0..100 (the app's quiet hours):
+// Loudness as a share of the tuned level, 0..100 (device volume × quiet hours):
 // the ding and the melodies render again at it on their next play.
 void chime_set_level(uint8_t pct);
 

@@ -79,10 +79,18 @@ static bool touch_down = false;
 // The device's loudness: its own (a swipe, NVS) scaled by the app's
 // quiet hours (`vo`).
 static uint8_t app_volume = 100;
-static VolumeSwipe volume_swipe = {};
 static void apply_sound_level(void) {
     sound_hal_set_level((uint8_t)(volume_get() * app_volume / 100));
 }
+static void set_device_volume(int pct) {
+    volume_set(pct);
+    apply_sound_level();
+}
+
+// A touch is a tap for the director on its release, unless it turned into a
+// vertical swipe: that sets the volume instead (volume_swipe.h).
+static VolumeSwipe volume_swipe = {};
+static uint16_t touch_x = 0;   // where the finger was last
 
 static void my_touch_cb(lv_indev_t* indev, lv_indev_data_t* data) {
     uint16_t x, y;
@@ -114,23 +122,24 @@ static void my_touch_cb(lv_indev_t* indev, lv_indev_data_t* data) {
         pressed = false;
     }
 
-    // A vertical swipe sets the volume (volume_swipe.h); its release isn't a tap.
     if (pressed && !touch_down) {
-        volume_swipe_press(&volume_swipe, y, (uint8_t)volume_get());
+        volume_swipe_press(&volume_swipe, y, volume_get());
     } else if (pressed && volume_swipe_move(&volume_swipe, y)) {
         char note[48];
         snprintf(note, sizeof(note), S->volume_fmt, volume_swipe.level);
         ui_flash_status(note, 1500);
-        sound_hal_set_level((uint8_t)(volume_swipe.level * app_volume / 100));
-    } else if (!pressed && touch_down && volume_swipe_release(&volume_swipe)) {
-        director_suppress_tap();
-        volume_set(volume_swipe.level);
-        apply_sound_level();
-        sound_hal_chime();                 // hear the new level
+    } else if (!pressed && touch_down) {
+        if (volume_swipe_release(&volume_swipe)) {
+            set_device_volume(volume_swipe.level);
+            sound_hal_chime();             // hear the new level
+        } else {
+            director_tap(touch_x);
+        }
     }
 
     touch_down = pressed;
     if (pressed) {
+        touch_x = x;
         data->point.x = x;
         data->point.y = y;
         data->state = LV_INDEV_STATE_PRESSED;
@@ -254,7 +263,7 @@ static void check_serial_cmd() {
             }
             else if (strcmp(cmd_buf, "volume") == 0 || strncmp(cmd_buf, "volume ", 7) == 0) {
                 // QA: `volume [0-100]`, the device's own loudness (as a swipe sets it; kept in NVS).
-                if (cmd_buf[6] == ' ') { volume_set(atoi(cmd_buf + 7)); apply_sound_level(); }
+                if (cmd_buf[6] == ' ') set_device_volume(atoi(cmd_buf + 7));
                 Serial.printf("{\"volume\":%d}\n", volume_get());
             }
             else if (strncmp(cmd_buf, "melody ", 7) == 0) {
@@ -345,8 +354,7 @@ void setup() {
     ui_update_ble_status(ble_get_state(), ble_get_device_name(), ble_get_mac_address());
     ui_update_battery(power_hal_battery_pct(), power_hal_is_charging(), power_hal_is_vbus_in());
     director_init();    // rooms + beats; boots on the meters (home)
-    clawd_prefs_init();  // the saved liveliness and attention animation, before the app says otherwise
-    volume_pref_init();
+    clawd_prefs_init();  // the saved liveliness, attention animation and volume, before the app says otherwise
     apply_sound_level();
 
     Serial.printf("Dashboard ready (%s, %dx%d) %lu ms after boot, waiting for data on BLE...\n",
@@ -410,7 +418,8 @@ static void touch_pair_tick(void) {
     // Taps on the hint don't make Clawd peek (the face would cover it).
     director_set_pairing_touch(ui_pair_hint_visible());
     const bool enabled = ui_pair_hint_visible() && director_room() == ROOM_METERS && !idle_is_asleep();
-    switch (pair_hold_step(&touch_hold, enabled, touch_down, millis())) {
+    // A volume swipe is never a hold.
+    switch (pair_hold_step(&touch_hold, enabled, touch_down && !volume_swipe.swiping, millis())) {
     case PAIR_HOLD_HOLDING:
         Serial.println("Pair: touch hold, keep holding to clear the pairing");
         ui_set_pair_hint(PAIR_HINT_HOLDING);
