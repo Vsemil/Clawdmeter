@@ -11,13 +11,16 @@
 // Shared ES8311 chime engine. See chime.h. Every ES8311 board shares one copy
 // of the codec setup and the non-blocking playback task.
 //
-// The ding is rendered once into a mono buffer and streamed from there, so
-// nothing is computed while the DMA waits: computing it live starved the DMA
-// (ESP_I2S keeps ~33 ms of buffers and doesn't let us grow them) and
-// crackled. The render runs in a background task started on the first
-// chime_tick(), after setup() has made its own allocations, so boot never
-// waits for it. A ding asked for during the render plays when it finishes;
-// that is also how the boot ding plays.
+// The ding and every alert melody are rendered once, at full level, into
+// mono buffers and only streamed after that, scaled to the current level on
+// the way out: computing a sound live starved the DMA (ESP_I2S keeps ~33 ms
+// of buffers and doesn't let us grow them) and crackled, and rendering a
+// melody when its alert came took seconds the screen spent frozen. The
+// render runs in a background task started on the first chime_tick(), after
+// setup() has made its own allocations, at the lowest priority on the other
+// core, so boot and the UI never wait for it. A ding asked for during its
+// render plays when it finishes; a melody asked for before its own is ready
+// plays the ding instead.
 //
 // The buffer lives in PSRAM where there is some. Without PSRAM (the C6) it
 // takes internal RAM only while CHIME_RAM_RESERVE stays free, and a ding that
@@ -46,25 +49,22 @@ static volatile bool playing = false;
 static es8311_handle_t es    = nullptr;
 
 static float    gain       = DING_GAIN;
-static volatile uint8_t level_pct = 100;   // chime_set_level: quiet hours
-// The gain everything renders at: the tuned one, scaled by the level.
+static volatile uint8_t level_pct = 100;   // chime_set_level: device volume × quiet hours
+// The gain everything plays at: the tuned one, scaled by the level.
 static float eff_gain(void) { return gain * (float)level_pct / 100.0f; }
-static int16_t* pcm        = nullptr;   // mono samples of the rendered ding
+static int16_t* pcm        = nullptr;   // mono samples of the ding, at full level
 static uint32_t pcm_frames = 0;         // how many fit (may be < ding_frames)
-static float    pcm_gain   = -1.0f;     // gain `pcm` was rendered at
 static volatile bool render_started = false;
 static volatile bool rendering = false;  // the background render is running
 static volatile bool pending   = false;  // play when the render finishes
 static portMUX_TYPE  state_lock = portMUX_INITIALIZER_UNLOCKED;  // rendering + pending
 
-// Alert melodies: one PSRAM buffer, rendered on demand for the melody asked
-// for and kept, so the same alert again streams at once.
-static int16_t* mel_pcm      = nullptr;
-static uint32_t mel_cap      = 0;       // frames the buffer holds (the longest melody)
-static uint32_t mel_len      = 0;       // frames of the melody rendered in it
-static int      mel_rendered = -1;      // which melody that is
-static float    mel_gain     = -1.0f;   // ...and at what gain
-static volatile uint8_t mel_next = 0;   // the melody the play task renders and streams
+// Alert melodies: one PSRAM buffer each, at full level, rendered after the
+// ding. None without PSRAM: the ding stands in.
+static int16_t* mel_pcm[MELODY_COUNT]   = {};
+static uint32_t mel_len[MELODY_COUNT]   = {};
+static volatile bool mel_ready[MELODY_COUNT] = {};
+static volatile uint8_t mel_next = 0;   // the melody the play task streams
 
 static bool es8311_setup(void) {
     es = es8311_create(0, cfg.es8311_addr);   // I2C port 0 (shared Wire bus)
@@ -103,25 +103,42 @@ static bool allocate(void) {
     return true;
 }
 
-// Render the ding at the current gain into `pcm` (allocated on first use).
-// False when there's no room.
+// Render the ding at full level into `pcm`. False when there's no room.
 static bool render(void) {
-    if (!pcm && !allocate()) return false;
+    if (!allocate()) return false;
     const uint32_t rate = (uint32_t)cfg.sample_rate, full = ding_frames(rate), frames = pcm_frames;
     const uint32_t fade = frames < full ? (uint32_t)(CHIME_FADE_S * rate) : 0;
-    const float g = eff_gain();                 // chime_tune / the level may change meanwhile
     const uint32_t t0 = millis();
     for (uint32_t n = 0; n < frames; n++) {
-        float s = (float)ding_sample(n, rate, g);
+        float s = (float)ding_sample(n, rate, 1.0f);
         if (n + fade >= frames) s *= (float)(frames - n) / (float)(fade + 1);
         pcm[n] = (int16_t)s;
         if ((n & 2047) == 2047) vTaskDelay(1);  // let the idle task (and its watchdog) run
     }
-    pcm_gain = g;
-    Serial.printf("chime: rendered %u frames at %d Hz, gain %.2f, in %lu ms (at %lu ms since boot)\n",
-                  (unsigned)frames, cfg.sample_rate, g, (unsigned long)(millis() - t0),
+    Serial.printf("chime: rendered %u frames at %d Hz in %lu ms (at %lu ms since boot)\n",
+                  (unsigned)frames, cfg.sample_rate, (unsigned long)(millis() - t0),
                   (unsigned long)millis());
     return true;
+}
+
+// Render every alert melody at full level, each into its own PSRAM buffer.
+static void render_melodies(void) {
+    const uint32_t rate = (uint32_t)cfg.sample_rate, t0 = millis();
+    for (int m = 0; m < MELODY_COUNT; m++) {
+        if (m == MELODY_DING) continue;
+        const uint32_t frames = melody_frames((Melody)m, rate);
+        int16_t* buf = (int16_t*)heap_caps_malloc((size_t)frames * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!buf) break;                        // no PSRAM (or none left): the ding stands in
+        for (uint32_t n = 0; n < frames; n++) {
+            buf[n] = melody_sample((Melody)m, n, rate, 1.0f);
+            if ((n & 2047) == 2047) vTaskDelay(1);
+        }
+        mel_pcm[m] = buf;
+        mel_len[m] = frames;
+        mel_ready[m] = true;
+    }
+    Serial.printf("chime: rendered the melodies in %lu ms (at %lu ms since boot)\n",
+                  (unsigned long)(millis() - t0), (unsigned long)millis());
 }
 
 static void start_playback(void);
@@ -134,22 +151,24 @@ static void render_task(void* arg) {
     pending = false;
     portEXIT_CRITICAL(&state_lock);
     if (play) start_playback();
+    render_melodies();
     vTaskDelete(nullptr);
 }
 
-// Stream `frames` mono samples from `buf` as stereo frames.
+// Stream `frames` mono samples from `buf` (full level) as stereo frames, at
+// the current gain.
 static void stream_mono(const int16_t* buf, uint32_t frames) {
+    const int32_t q = (int32_t)lrintf(eff_gain() * 32768.0f);   // Q15, <= 1.0
     for (uint32_t n = 0; n < frames;) {
         uint32_t k = 0;
         for (; k < CHUNK_FRAMES && n < frames; k++, n++) {
-            chunk[2 * k] = buf[n];
-            chunk[2 * k + 1] = buf[n];
+            const int16_t v = (int16_t)(((int32_t)buf[n] * q) >> 15);
+            chunk[2 * k] = v;
+            chunk[2 * k + 1] = v;
         }
         i2s.write((uint8_t*)chunk, k * 2 * sizeof(int16_t));
     }
 }
-
-static void stream_buffer(void) { stream_mono(pcm, pcm_frames); }
 
 // Compute and stream the ding as it plays (no buffer; FPU chips only).
 static void stream_live(void) {
@@ -166,11 +185,9 @@ static void stream_live(void) {
 }
 
 static void chime_task(void* arg) {
-    // A new gain (chime_tune) renders again here, before the amp comes on.
-    const bool buffered = pcm && (pcm_gain == eff_gain() || render());
     if (cfg.amp_enable) cfg.amp_enable(true);
     delay(8);                                  // let the amp settle (avoids turn-on pop)
-    if (buffered) stream_buffer();
+    if (pcm) stream_mono(pcm, pcm_frames);
 #if SOC_CPU_HAS_FPU
     else stream_live();
 #endif
@@ -182,28 +199,11 @@ static void chime_task(void* arg) {
     vTaskDelete(nullptr);
 }
 
-// Render melody `m` at the current gain into the melody buffer.
-static void render_melody(uint8_t m) {
-    const uint32_t rate = (uint32_t)cfg.sample_rate, frames = melody_frames((Melody)m, rate);
-    const float g = eff_gain();
-    const uint32_t t0 = millis();
-    for (uint32_t n = 0; n < frames && n < mel_cap; n++) {
-        mel_pcm[n] = melody_sample((Melody)m, n, rate, g);
-        if ((n & 2047) == 2047) vTaskDelay(1);
-    }
-    mel_len = frames < mel_cap ? frames : mel_cap;
-    mel_rendered = m;
-    mel_gain = g;
-    Serial.printf("chime: rendered melody %s, %u frames in %lu ms\n", melody_name((Melody)m),
-                  (unsigned)mel_len, (unsigned long)(millis() - t0));
-}
-
 static void melody_task(void* arg) {
     const uint8_t m = mel_next;
-    if (mel_rendered != m || mel_gain != eff_gain()) render_melody(m);
     if (cfg.amp_enable) cfg.amp_enable(true);
     delay(8);
-    stream_mono(mel_pcm, mel_len);
+    stream_mono(mel_pcm[m], mel_len[m]);
     memset(chunk, 0, sizeof(chunk));
     i2s.write((uint8_t*)chunk, sizeof(chunk));
     delay(20);
@@ -251,14 +251,8 @@ void chime_play(void) {
 }
 
 void chime_play_melody(uint8_t melody) {
-    if (melody == MELODY_DING || melody >= MELODY_COUNT) { chime_play(); return; }
+    if (melody >= MELODY_COUNT || !mel_ready[melody]) { chime_play(); return; }   // the ding stands in
     if (!ready || playing) return;
-    if (!mel_pcm) {
-        const uint32_t want = melody_max_frames((uint32_t)cfg.sample_rate);
-        mel_pcm = (int16_t*)heap_caps_malloc((size_t)want * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-        if (!mel_pcm) { chime_play(); return; }   // no PSRAM: the ding stands in
-        mel_cap = want;
-    }
     playing = true;
     mel_next = melody;
     if (xTaskCreatePinnedToCore(melody_task, "melody", 4096, nullptr, CHIME_TASK_PRIORITY, nullptr,
@@ -271,14 +265,14 @@ void chime_set_level(uint8_t pct) {
 }
 
 void chime_tick(void) {
-    // First tick: setup() is done, so render now, in the background, at the
-    // lowest priority (the loop and the BLE host keep the CPU).
+    // First tick: setup() is done, so render now, in the background on core 0
+    // (the loop is on core 1) just above idle, so the BLE host keeps the CPU.
     if (!ready || render_started) return;
     portENTER_CRITICAL(&state_lock);
     render_started = true;
     rendering = true;
     portEXIT_CRITICAL(&state_lock);
-    if (xTaskCreatePinnedToCore(render_task, "chime-render", 4096, nullptr, tskIDLE_PRIORITY, nullptr, 0) != pdPASS) {
+    if (xTaskCreatePinnedToCore(render_task, "chime-render", 4096, nullptr, tskIDLE_PRIORITY + 1, nullptr, 0) != pdPASS) {
         portENTER_CRITICAL(&state_lock);
         rendering = false;   // render on the first play instead
         const bool play = pending;
@@ -290,7 +284,7 @@ void chime_tick(void) {
 
 void chime_tune(float g, int volume) {
     if (!ready || playing) return;
-    gain = g < 0.0f ? 0.0f : (g > 1.0f ? 1.0f : g);   // re-rendered on the next play
+    gain = g < 0.0f ? 0.0f : (g > 1.0f ? 1.0f : g);   // applied as it streams
     if (volume >= 0 && es) es8311_voice_volume_set(es, volume > 100 ? 100 : volume, NULL);
     chime_play();
 }

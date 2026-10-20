@@ -3,10 +3,10 @@
 
 // Board-agnostic ES8311 + I2S chime engine. A board's sound.cpp fills in a
 // ChimeConfig (its I2S pins, codec address, volume, and a power-amp enable
-// hook) and calls chime_init() once; the ding (ding.h) is rendered in the
-// background after setup and streamed to the codec by a one-shot FreeRTOS
-// task, so the LVGL loop never blocks. It plays once at boot. Any sample rate
-// the ES8311 table has works; 16-bit stereo out.
+// hook) and calls chime_init() once; the ding (ding.h) and the alert melodies
+// (melody.h) are rendered once in the background after setup and streamed to
+// the codec by a one-shot FreeRTOS task, so the LVGL loop never blocks. Any
+// sample rate the ES8311 table has works; 16-bit stereo out.
 //
 // amp_enable is the only part that differs structurally between boards: the
 // 2.16 toggles a GPIO, the 1.8 drives an XCA9554 expander line. May be null.
@@ -29,13 +29,13 @@ bool chime_init(const ChimeConfig& cfg);
 // before the render is done, it plays when the render finishes.
 void chime_play(void);
 
-// Play one alert melody (melody.h; MELODY_DING is chime_play). Rendered on
-// demand into a PSRAM buffer and kept until another melody is asked for;
-// without PSRAM the ding plays instead. No-op while anything plays.
+// Play one alert melody (melody.h; MELODY_DING is chime_play). Each is
+// rendered once after boot into its own PSRAM buffer; before it's ready, or
+// without PSRAM, the ding plays instead. No-op while anything plays.
 void chime_play_melody(uint8_t melody);
 
-// Loudness as a share of the tuned level, 0..100 (device volume × quiet hours):
-// the ding and the melodies render again at it on their next play.
+// Loudness as a share of the tuned level, 0..100 (device volume × quiet hours),
+// applied as a sound streams: nothing renders again.
 void chime_set_level(uint8_t pct);
 
 // Call every loop: the first call starts the background render.

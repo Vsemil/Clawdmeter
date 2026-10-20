@@ -37,7 +37,9 @@ float ding_value(uint32_t n, uint32_t rate) {
 float ding_note_value(uint32_t n, uint32_t rate, float f0) {
     if (rate == 0 || n >= ding_frames(rate)) return 0.0f;
     const float t = (float)n / (float)rate;
-    const float ph = TWO_PI_F * f0 * t;
+    // The phase within one period: sinf is slow on large arguments.
+    const float cyc = f0 * t;
+    const float ph = TWO_PI_F * (cyc - floorf(cyc));
     const float tone = sinf(ph) + P3 * sinf(3.0f * ph) + P2 * sinf(2.0f * ph) + P5 * sinf(5.0f * ph);
     float atk = t / ATTACK_S;
     if (atk > 1.0f) atk = 1.0f;
