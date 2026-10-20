@@ -579,6 +579,19 @@ impl SettingsView {
                 },
             ),
         ));
+        let meeting = self.settings.meeting_title;
+        let me = cx.entity().downgrade();
+        pane = pane.child(field(
+            t,
+            tr("Next meeting"),
+            tr("Shows today's next meeting from the calendar in place of the title or clock, scrolling when it doesn't fit."),
+            toggle(t, "meeting-title", meeting, true, move |_, _, cx| {
+                let _ = me.update(cx, |v, cx| {
+                    v.save(|s, _| s.meeting_title = !meeting);
+                    cx.notify();
+                });
+            }),
+        ));
         let me = cx.entity().downgrade();
         let level = self.settings.liveliness;
         pane = pane.child(field_stacked(

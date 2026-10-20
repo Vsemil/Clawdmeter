@@ -49,6 +49,8 @@ this firmware behaves like upstream when the app doesn't send them.
   device. `tools/calnext` is the EventKit helper.
 - Today's next meeting (`nm`) takes the title's place, in the status line's
   font; too long for the header, it scrolls and holds on its start.
+  **Next meeting** on the Device page (`meeting_title`, default on) turns it
+  off.
 
 ## Sound and resting
 

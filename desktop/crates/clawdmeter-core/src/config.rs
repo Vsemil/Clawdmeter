@@ -323,6 +323,9 @@ pub struct Settings {
     pub quiet_volume: u8,
     /// Pace marker on the device's usage bars (`pm`, default off).
     pub pace_marker: bool,
+    /// Today's next meeting in place of the device's title or clock
+    /// (`meeting_title`, default on; needs `calendar`). Off sends `nm` empty.
+    pub meeting_title: bool,
 }
 
 /// Quiet hours: minutes after local midnight, `start` included, `end` not.
@@ -507,6 +510,7 @@ impl Settings {
                 .filter(|s| !s.is_empty())
                 .map_or_else(|| paths.state_dir.join("calnext"), |s| paths.expand_tilde(s)),
             pace_marker: on_off(cfg.get("pace_marker"), false),
+            meeting_title: on_off(cfg.get("meeting_title"), true),
         }
     }
 
@@ -566,6 +570,7 @@ impl Settings {
             ("alert_chime", "beep", self.alert_chime, current.alert_chime),
             ("desktop_chime", "", self.desktop_chime, current.desktop_chime),
             ("pace_marker", "", self.pace_marker, current.pace_marker),
+            ("meeting_title", "", self.meeting_title, current.meeting_title),
         ] {
             if now != was {
                 cfg.set(key, oo(now));
@@ -788,6 +793,12 @@ mod tests {
         s.apply_to(&mut cfg, &paths());
         assert_eq!(cfg.get("attention_anim"), Some("off"));
         assert_eq!(Settings::from_config(&cfg, &paths(), None).attention_anim, AttentionAnim::Off);
+    }
+
+    #[test]
+    fn meeting_title() {
+        assert!(settings("").meeting_title, "on by default");
+        assert!(!settings("meeting_title = off\n").meeting_title);
     }
 
     #[test]

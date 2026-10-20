@@ -395,6 +395,10 @@ pub(super) fn lookup(en: &str) -> Option<&'static str> {
         "no touch" => "без сенсора",
         "resistive touch" => "резистивный сенсор",
         "capacitive touch" => "ёмкостный сенсор",
+        "Next meeting" => "Ближайшая встреча",
+        "Shows today's next meeting from the calendar in place of the title or clock, scrolling when it doesn't fit." => {
+            "Показывает ближайшую встречу на сегодня из календаря вместо заголовка или часов; бегущей строкой, если не помещается."
+        }
         _ => return None,
     })
 }

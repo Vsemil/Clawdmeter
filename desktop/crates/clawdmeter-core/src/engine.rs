@@ -494,12 +494,13 @@ impl Engine {
             _ => 100,
         };
         let pm = u8::from(self.settings.pace_marker);
+        let nm = self.next_meeting.clone().filter(|_| self.settings.meeting_title);
         let prefs_changed = self.sent_lv != Some(self.settings.liveliness)
             || self.sent_aa != Some(aa)
             || self.sent_pm != Some(pm)
             || self.sent_lg != Some(self.settings.lang)
             || self.sent_vo != Some(vo)
-            || self.sent_nm.as_ref() != Some(&self.next_meeting);
+            || self.sent_nm.as_ref() != Some(&nm);
 
         let (mut payload, kind) = if self.logged_out {
             if !(self.fresh_poll || self.attention.pending()) {
@@ -539,7 +540,7 @@ impl Engine {
             p.lg = Some(self.settings.lang.code().to_owned());
             p.vo = Some(vo);
             // Always sent, "" for none, so the device drops a meeting that's over.
-            p.nm = Some(self.next_meeting.clone().unwrap_or_default());
+            p.nm = Some(nm.unwrap_or_default());
             p.pm = Some(pm);
             (p, kind)
         };
@@ -1254,6 +1255,18 @@ mod tests {
         assert!(write(&mut e, T0 + 3).is_none());
         e.on_connected();
         assert_eq!(write(&mut e, T0 + 4).unwrap().payload.pm, Some(1), "resent on a reconnect");
+    }
+
+    #[test]
+    fn meeting_title_off_sends_no_meeting() {
+        let mut e = Engine::new(settings(""));
+        e.on_poll_results(T0, vec![(PathBuf::from("/h/.claude"), Ok(reading(15)))]);
+        e.set_next_meeting(Some("10:00 Sync".into()));
+        assert_eq!(write(&mut e, T0).unwrap().payload.nm.as_deref(), Some("10:00 Sync"));
+        e.update_settings(settings("meeting_title = off\n"));
+        let w = write(&mut e, T0 + 1).expect("the change goes out right away");
+        assert_eq!(w.payload.nm.as_deref(), Some(""), "the device goes back to its title");
+        assert!(write(&mut e, T0 + 2).is_none());
     }
 
     #[test]
