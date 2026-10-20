@@ -12,25 +12,31 @@
 // of the codec setup and the non-blocking playback task.
 //
 // The ding and every alert melody are rendered once, at full level, into
-// mono buffers and only streamed after that, scaled to the current level on
-// the way out: computing a sound live starved the DMA (ESP_I2S keeps ~33 ms
-// of buffers and doesn't let us grow them) and crackled, and rendering a
-// melody when its alert came took seconds the screen spent frozen. The
-// render runs in a background task started on the first chime_tick(), after
-// setup() has made its own allocations, at the lowest priority on the other
-// core, so boot and the UI never wait for it. A ding asked for during its
-// render plays when it finishes; a melody asked for before its own is ready
-// plays the ding instead.
+// mono buffers and only streamed after that, scaled to the current gain on
+// the way out: computing a sound live starved the DMA (ESP_I2S keeps
+// I2S_DMA_FRAMES of buffers, ~33 ms at 44.1 kHz, and doesn't let us grow
+// them) and crackled, and rendering a melody when its alert came froze the
+// screen for seconds. The render runs in a background task started on the
+// first chime_tick(), after setup() has made its own allocations, on core 0
+// just above idle, so boot and the UI never wait for it. A ding asked for
+// during its render plays when it finishes; a melody asked for before its
+// own is ready plays the ding instead.
 //
 // The buffer lives in PSRAM where there is some. Without PSRAM (the C6) it
 // takes internal RAM only while CHIME_RAM_RESERVE stays free, and a ding that
 // doesn't fit is cut short with a fade. Live synthesis is left as a last
-// resort for chips with an FPU; without one (the C6) it can't keep up.
+// resort for chips with an FPU; without one (the C6) it can't keep up, so a
+// ding with no buffer is skipped and logged.
+//
+// A board with no amp-enable line (amp_enable null) keeps the codec's DAC
+// muted between dings instead, so its always-on amp doesn't hiss.
 
 // Share of the ding's own level (it peaks just under full scale): headroom
 // for the codec and the small amp. ChimeConfig.volume sets the loudness.
 #define DING_GAIN 0.7f
 #define CHUNK_FRAMES 512
+// ESP_I2S's DMA queue (6 descriptors of 240 frames): ~130 ms at 11025 Hz.
+#define I2S_DMA_FRAMES (6 * 240)
 // Above the Arduino loop (LVGL); on core 1 where there is one, away from the
 // NimBLE host and radio on core 0.
 #define CHIME_TASK_PRIORITY 10
@@ -57,7 +63,7 @@ static uint32_t pcm_frames = 0;         // how many fit (may be < ding_frames)
 static volatile bool render_started = false;
 static volatile bool rendering = false;  // the background render is running
 static volatile bool pending   = false;  // play when the render finishes
-static portMUX_TYPE  state_lock = portMUX_INITIALIZER_UNLOCKED;  // rendering + pending
+static portMUX_TYPE  state_lock = portMUX_INITIALIZER_UNLOCKED;  // rendering, pending, playing
 
 // Alert melodies: one PSRAM buffer each, at full level, rendered after the
 // ding. None without PSRAM: the ding stands in.
@@ -77,6 +83,7 @@ static bool es8311_setup(void) {
     es8311_sample_frequency_config(es, clk.mclk_frequency, clk.sample_frequency);
     es8311_microphone_config(es, false);
     es8311_voice_volume_set(es, cfg.volume, NULL);
+    if (!cfg.amp_enable) es8311_voice_mute(es, true);   // until a ding plays
     return true;
 }
 
@@ -184,37 +191,55 @@ static void stream_live(void) {
     }
 }
 
+// Amp on (or, without an amp line, the DAC unmuted) only while a ding plays.
+static void output_on(bool on) {
+    if (cfg.amp_enable) cfg.amp_enable(on);
+    else es8311_voice_mute(es, !on);
+}
+
 static void chime_task(void* arg) {
-    if (cfg.amp_enable) cfg.amp_enable(true);
+    // Never renders here: this runs above the loop. render_task does it.
+    const bool buffered = pcm != nullptr;
+#if !SOC_CPU_HAS_FPU
+    if (!buffered) {
+        Serial.println("chime: no ding buffer (not enough internal RAM), skipped");
+        playing = false;
+        vTaskDelete(nullptr);
+    }
+#endif
+    output_on(true);
     delay(8);                                  // let the amp settle (avoids turn-on pop)
-    if (pcm) stream_mono(pcm, pcm_frames);
+    if (buffered) stream_mono(pcm, pcm_frames);
 #if SOC_CPU_HAS_FPU
     else stream_live();
 #endif
-    memset(chunk, 0, sizeof(chunk));           // a little silence so the DMA drains
-    i2s.write((uint8_t*)chunk, sizeof(chunk));
-    delay(20);
-    if (cfg.amp_enable) cfg.amp_enable(false);
+    memset(chunk, 0, sizeof(chunk));           // a little silence, then let the
+    i2s.write((uint8_t*)chunk, sizeof(chunk)); // whole DMA queue play out
+    delay(I2S_DMA_FRAMES * 1000 / cfg.sample_rate + 5);
+    output_on(false);
     playing = false;
     vTaskDelete(nullptr);
 }
 
 static void melody_task(void* arg) {
     const uint8_t m = mel_next;
-    if (cfg.amp_enable) cfg.amp_enable(true);
+    output_on(true);
     delay(8);
     stream_mono(mel_pcm[m], mel_len[m]);
     memset(chunk, 0, sizeof(chunk));
     i2s.write((uint8_t*)chunk, sizeof(chunk));
-    delay(20);
-    if (cfg.amp_enable) cfg.amp_enable(false);
+    delay(I2S_DMA_FRAMES * 1000 / cfg.sample_rate + 5);
+    output_on(false);
     playing = false;
     vTaskDelete(nullptr);
 }
 
 static void start_playback(void) {
-    if (playing) return;
+    portENTER_CRITICAL(&state_lock);
+    const bool busy = playing;
     playing = true;
+    portEXIT_CRITICAL(&state_lock);
+    if (busy) return;
     if (xTaskCreatePinnedToCore(chime_task, "chime", 4096, nullptr, CHIME_TASK_PRIORITY, nullptr,
                                 CHIME_TASK_CORE) != pdPASS)
         playing = false;   // couldn't spawn — stay silent rather than wedge the flag
@@ -252,8 +277,12 @@ void chime_play(void) {
 
 void chime_play_melody(uint8_t melody) {
     if (melody >= MELODY_COUNT || !mel_ready[melody]) { chime_play(); return; }   // the ding stands in
-    if (!ready || playing) return;
+    if (!ready) return;
+    portENTER_CRITICAL(&state_lock);
+    const bool busy = playing;
     playing = true;
+    portEXIT_CRITICAL(&state_lock);
+    if (busy) return;
     mel_next = melody;
     if (xTaskCreatePinnedToCore(melody_task, "melody", 4096, nullptr, CHIME_TASK_PRIORITY, nullptr,
                                 CHIME_TASK_CORE) != pdPASS)
@@ -264,17 +293,12 @@ void chime_set_level(uint8_t pct) {
     level_pct = pct > 100 ? 100 : pct;
 }
 
-void chime_tick(void) {
-    // First tick: setup() is done, so render now, in the background on core 0
-    // (the loop is on core 1) just above idle, so the BLE host keeps the CPU.
-    if (!ready || render_started) return;
-    portENTER_CRITICAL(&state_lock);
-    render_started = true;
-    rendering = true;
-    portEXIT_CRITICAL(&state_lock);
+// Run render_task in the background on core 0 (the loop is on core 1) just
+// above idle, so the BLE host keeps the CPU. The caller has set `rendering`.
+static void start_render(void) {
     if (xTaskCreatePinnedToCore(render_task, "chime-render", 4096, nullptr, tskIDLE_PRIORITY + 1, nullptr, 0) != pdPASS) {
         portENTER_CRITICAL(&state_lock);
-        rendering = false;   // render on the first play instead
+        rendering = false;   // play what there is (or nothing) instead
         const bool play = pending;
         pending = false;
         portEXIT_CRITICAL(&state_lock);
@@ -282,9 +306,19 @@ void chime_tick(void) {
     }
 }
 
+void chime_tick(void) {
+    // First tick: setup() is done, so render now.
+    if (!ready || render_started) return;
+    portENTER_CRITICAL(&state_lock);
+    render_started = true;
+    rendering = true;
+    portEXIT_CRITICAL(&state_lock);
+    start_render();
+}
+
 void chime_tune(float g, int volume) {
     if (!ready || playing) return;
-    gain = g < 0.0f ? 0.0f : (g > 1.0f ? 1.0f : g);   // applied as it streams
+    gain = !(g >= 0.0f) ? 0.0f : (g > 1.0f ? 1.0f : g);   // NaN too; applied as it streams
     if (volume >= 0 && es) es8311_voice_volume_set(es, volume > 100 ? 100 : volume, NULL);
-    chime_play();
+    chime_play();   // the gain applies as it streams: nothing renders again
 }

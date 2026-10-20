@@ -74,7 +74,9 @@ pub struct Payload {
     /// Sessions with a hook event in the last 5 minutes.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub n: Option<u32>,
-    /// 1 = heartbeat/replay (no fresh poll): the rate math ignores it.
+    /// 1 = the usage numbers are a replay, not a fresh poll (heartbeats and
+    /// writes between polls): the rate math ignores them. Fast-clock fields in
+    /// the same write still count.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rp: Option<u8>,
     /// How lively Clawd is, 1 (No-nonsense) to 5 (All-nonsense). The device
@@ -113,6 +115,11 @@ pub struct Payload {
     /// Today's next meeting, "HH:MM title", shown in place of the title.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nm: Option<String>,
+    /// 1 = a pace marker on the usage bars: the fill shows whether usage is
+    /// ahead of the elapsed share of its window. The device keeps the last
+    /// value it got.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pm: Option<u8>,
 }
 
 /// The device keeps this many characters of a model name (`fn`).
@@ -121,7 +128,7 @@ pub const SCOPED_NAME_LIMIT: usize = 12;
 /// Every key [`Payload`] can emit, in serialization order.
 pub const PAYLOAD_KEYS: &[&str] = &[
     "s", "sr", "w", "wr", "st", "acct", "tp", "pd", "rd", "t", "tf", "c", "ok", "b", "m", "x", "a", "e", "es", "n",
-    "rp", "lv", "aa", "lg", "k", "pj", "f", "fn", "er", "vo", "nm",
+    "rp", "lv", "aa", "lg", "k", "pj", "f", "fn", "er", "vo", "nm", "pm",
 ];
 /// The fast-clock keys added in v0.4 (old firmware ignores them).
 pub const ADDITIVE_KEYS: &[&str] = &["a", "e", "es", "n", "rp"];
@@ -543,6 +550,7 @@ mod tests {
             er: Some("net".into()),
             vo: Some(10),
             nm: Some("10:00 Sync".into()),
+            pm: Some(1),
         };
         let v: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&pl.to_json()).unwrap();
         // serde_json's Map is sorted without preserve_order; check membership.

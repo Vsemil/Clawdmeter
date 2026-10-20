@@ -4,6 +4,7 @@
 #include "ui_text.h"
 #include "volume_swipe.h"
 #include "hal/board_info_hal.h"
+#include "ui.h"
 #include <Preferences.h>
 #include <Arduino.h>
 #include <string.h>
@@ -16,11 +17,13 @@ void clawd_prefs_init(void) {
     const int lively = prefs.getUChar("lively", CLAWD_LIVELINESS_DEFAULT);
     const int attn = prefs.getUChar("attn_anim", CLAWD_ATTN_ANIM_DEFAULT_S);
     volume_pct = volume_clamp(prefs.getUChar("volume", 100));
+    const bool pace = prefs.getUChar("pace_mark", 0) != 0;
     prefs.end();
     director_set_liveliness(clawd_liveliness_clamp(lively));
     director_set_attn_anim(clawd_attn_anim_clamp(attn));
-    Serial.printf("Clawd prefs init: liveliness %d, attention animation %d s, volume %d%%\n",
-                  clawd_liveliness(), clawd_attn_anim(), volume_pct);
+    pace_marker_set(pace);
+    Serial.printf("Device prefs init: liveliness %d, attention animation %d s, pace marker %s, volume %d%%\n",
+                  clawd_liveliness(), clawd_attn_anim(), pace ? "on" : "off", volume_pct);
 }
 
 static void save(const char* key, uint8_t v) {
@@ -90,3 +93,14 @@ void lang_pref_set(const char* code) {
     board_hal_restart();
     lang_select(t);   // no restart (simulator): texts switch, the layout stays
 }
+static bool pace_marker = false;
+
+void pace_marker_set(bool on) {
+    ui_set_pace_marker(on);
+    if (on == pace_marker) return;
+    pace_marker = on;
+    save("pace_mark", on ? 1 : 0);
+    Serial.printf("Pace marker: %s\n", on ? "on" : "off");
+}
+
+bool pace_marker_get(void) { return pace_marker; }

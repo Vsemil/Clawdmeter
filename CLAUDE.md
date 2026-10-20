@@ -17,8 +17,8 @@ writes them to the device over BLE.
 - `tools/`: asset converters, `ci/` (release and manifest scripts, with
   unittests), `packaging/`. `research/clawd-official/`: the official Clawd
   animation archive.
-- `SIM-USAGE.md`: simulator manual; `docs/sim-grid.md`: every panel at once
-  (`tools/simgrid/`). `screenshot.sh`: device screenshot over serial.
+- `docs/simulator.md`: simulator manual; `docs/sim-grid.md`: every panel at
+  once (`tools/simgrid/`).
 
 Nested `CLAUDE.md` files load when you read or edit a file in their folder.
 
@@ -87,12 +87,13 @@ The app writes one complete JSON object per write to RX
   replaced by a lower-ranked one, and a wait that loses the screen queues for
   it (`AttentionState`).
 - Fast clock: `a` (activity 0–3), `e` + `es` (event `p`/`s`/`b` and its
-  sequence), `n` (active sessions). `rp:1` marks a heartbeat replay, which the
-  rate math skips.
-- Clawd's settings, on every data payload: `lv` (liveliness 1–5) and `aa`
+  sequence), `n` (active sessions). `rp:1` marks the usage numbers as a replay
+  (heartbeats and writes between polls): the rate math and reset detector skip
+  them, but a new `es` in the same write still fires.
+- Device settings, on every data payload: `lv` (liveliness 1–5), `aa`
   (attention animation seconds: 120, 30, 10, 0 = off; only his animation,
-  not the alert). The device keeps both in NVS (`clawd_prefs.cpp`) so they
-  apply from boot.
+  not the alert) and `pm` (pace marker on the usage bars, `pace.h`). The
+  device keeps them in NVS (`clawd_prefs.cpp`) so they apply from boot.
 - Interface language, on every data payload: `lg` (`en`/`ru`). Kept in NVS
   too; a change restarts the device so the layout fits the new words.
 - Device → app: `0x01` on REQ (`…-0004`) when it has no data yet;
@@ -138,10 +139,17 @@ change for the first time.
   session history, abandoned approaches and checks CI already gates. Keep it
   proportional to the change.
 - Add screenshots or photos when UI or device output changes (device output:
-  `./screenshot.sh` captures or photos). Label simulator captures as such.
+  the `capturing-device-screenshots` skill, or photos). Label simulator captures as such.
   Add a Mermaid diagram when it clarifies flow, state or architecture.
 - **Hardware testing**: the exact boards and revisions tested on real
   hardware and what was verified, or "not tested on hardware".
+- **Agent review**: before opening the PR, have a subagent on a frontier
+  model such as Opus review everything the PR will contain (committed and
+  uncommitted). Ask for findings with a concrete failure scenario, fix what
+  holds up, and re-run the review if the fixes change the diff substantially.
+  Then tick the template's box and list only the findings left unfixed, with
+  why. If no subagent review could run, leave the box unticked and say why.
+  It is not human review.
 - **Human involvement**: how much the human author reviewed and QA'd, e.g.
   "Agent-written; human reviewed the diff and tested pairing and touch on an
   ESP32-S3-Touch-AMOLED-2.16." If none, "not reviewed by a human". Report
@@ -166,7 +174,8 @@ Workflows in `.github/workflows/`:
 Project skills in `.claude/skills/`:
 
 - `porting-a-board`: add a board end to end, including app, README, manifest and PR requirements.
-- `verifying-firmware-ui`: simulator screenshots and on-device `clawd <beat>` + `screenshot` QA.
+- `verifying-firmware-ui`: simulator screenshots and on-device `clawd <beat>` QA.
+- `capturing-device-screenshots`: a connected board's screen as a PNG (bundled `screenshot.py`).
 - `flashing-and-probing-boards`: flash a board and run serial commands (bundled `serial_cmd.py`).
 - `capturing-desktop-screenshots`: demo window screenshots under X11 (bundled `capture.sh`).
 - `cutting-a-release`: tags, what the release builds, pre-tag and packaging checks.

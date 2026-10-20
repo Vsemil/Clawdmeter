@@ -321,6 +321,8 @@ pub struct Settings {
     /// Loudness during quiet hours, % of the normal level (`quiet_volume`,
     /// default 10).
     pub quiet_volume: u8,
+    /// Pace marker on the device's usage bars (`pm`, default off).
+    pub pace_marker: bool,
 }
 
 /// Quiet hours: minutes after local midnight, `start` included, `end` not.
@@ -504,6 +506,7 @@ impl Settings {
                 .get("cal_helper")
                 .filter(|s| !s.is_empty())
                 .map_or_else(|| paths.state_dir.join("calnext"), |s| paths.expand_tilde(s)),
+            pace_marker: on_off(cfg.get("pace_marker"), false),
         }
     }
 
@@ -557,10 +560,12 @@ impl Settings {
         }
         let oo = |b: bool| if b { "on" } else { "off" };
         // A changed chime is written under its new name; the old one goes.
+        // The pace marker rides along (it has no old name).
         for (key, old, now, was) in [
             ("reset_chime", "chime", self.reset_chime, current.reset_chime),
             ("alert_chime", "beep", self.alert_chime, current.alert_chime),
             ("desktop_chime", "", self.desktop_chime, current.desktop_chime),
+            ("pace_marker", "", self.pace_marker, current.pace_marker),
         ] {
             if now != was {
                 cfg.set(key, oo(now));
@@ -783,6 +788,20 @@ mod tests {
         s.apply_to(&mut cfg, &paths());
         assert_eq!(cfg.get("attention_anim"), Some("off"));
         assert_eq!(Settings::from_config(&cfg, &paths(), None).attention_anim, AttentionAnim::Off);
+    }
+
+    #[test]
+    fn pace_marker() {
+        assert!(!settings("").pace_marker, "off by default");
+        assert!(settings("pace_marker = on\n").pace_marker);
+
+        let mut cfg = ConfigFile::parse("");
+        let mut s = Settings::from_config(&cfg, &paths(), None);
+        s.apply_to(&mut cfg, &paths());
+        assert!(cfg.get("pace_marker").is_none(), "the default stays out of the file");
+        s.pace_marker = true;
+        s.apply_to(&mut cfg, &paths());
+        assert_eq!(cfg.get("pace_marker"), Some("on"));
     }
 
     #[test]

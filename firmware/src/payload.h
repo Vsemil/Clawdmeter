@@ -12,7 +12,7 @@
 //   s  sr  w  wr  st  c  b  m  x  acct  tp  pd  rd  t  tf  ok   (long-standing)
 //   a   activity level 0-3 (clamped)          e   latest event, first char used
 //   es  event sequence number (uint32)        n   active sessions (clamped 0..999)
-//   rp  1 on a heartbeat replay               lv  liveliness 1-5 (clamped), -1 absent
+//   rp  1 = usage numbers are a replay        lv  liveliness 1-5 (clamped), -1 absent
 //   aa  attention animation seconds 0-120 (clamped, 0 = off), -1 absent
 //   lg  interface language code ("en", "ru"), "" absent
 //   k   alert kind with `m` (alert_kind.h), "" absent    pj  its project, "" absent
@@ -20,6 +20,7 @@
 //   er  why the numbers aren't fresh (auth, token, rate, net, app), "" absent
 //   vo  sound level 0-100 (clamped; the app's quiet hours), -1 absent
 //   nm  today's next meeting "HH:MM title", shown as the title; "" none
+//   pm  pace marker on the usage bars, 1 on / 0 off, -1 absent
 //
 // Returns false on malformed JSON; `*err` (if non-null) then points at a
 // static description. `out` is fully overwritten on success, untouched on

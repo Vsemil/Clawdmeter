@@ -30,7 +30,7 @@ struct UsageData {
     bool     has_event_seq;  // `es` present
     uint32_t event_seq;      // `es` sequence number; react once per change
     int16_t  sessions;       // `n`  sessions with a hook event in the last 5 min; -1 = absent
-    bool     replay;         // `rp` 1 = heartbeat replay of the last payload;
+    bool     replay;         // `rp` 1 = the usage numbers repeat the last poll;
                              //      the rate math and reset detection skip it
     int8_t   liveliness;     // `lv` 1-5 (clamped); -1 = absent (keep the saved level)
     int16_t  attn_anim_s;    // `aa` attention animation, seconds 0-120 (0 = off); -1 = absent
@@ -42,6 +42,7 @@ struct UsageData {
     char     err[8];         // `er` why the numbers aren't fresh (auth|token|rate|net|app); "" = absent
     int8_t   volume_pct;     // `vo` sound level 0-100 (the app's quiet hours); -1 = absent (full)
     char     next_meeting[64]; // `nm` today's next meeting, "HH:MM title", in place of the title; "" = none
+    int8_t   pace_marker;    // `pm` 1 = pace marker on the usage bars, 0 = off; -1 = absent
     bool ok;                 // data parse succeeded
     bool valid;              // false until first successful parse
 };
