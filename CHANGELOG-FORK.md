@@ -47,7 +47,8 @@ this firmware behaves like upstream when the app doesn't send them.
 - `calendar = eventkit | https ICS | .ics path`: reminders 15 and 5 minutes
   ahead (`cal_remind`) and "meeting started"; sent only once they reach the
   device. `tools/calnext` is the EventKit helper.
-- Today's next meeting (`nm`) takes the title's place.
+- Today's next meeting (`nm`) takes the title's place, in the status line's
+  font; too long for the header, it scrolls and holds on its start.
 
 ## Sound and resting
 

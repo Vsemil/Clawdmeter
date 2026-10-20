@@ -410,24 +410,62 @@ void ui_set_pair_hint(PairHint hint) {
 
 // The title's font follows the clock format (a 12-hour clock may need a
 // smaller one); hidden where the header has no room for it at all.
-// Today's next meeting (`nm`) takes the title's place; "" = the title.
+// Today's next meeting (`nm`) takes the title's place, in the status line's
+// font; "" = the title. Too long for the header, it runs as a marquee that
+// holds on its start between passes: the text twice with a gap, moved by one
+// copy, so each pass ends where it began.
 static char title_meeting[64] = "";
+static lv_obj_t* meeting_clip;   // the title's room; clips the marquee
+static lv_obj_t* lbl_meeting;
+#define MEETING_GAP        "      "
+#define MEETING_PX_PER_S   40
+#define MEETING_HOLD_MS    2500
+
+static void meeting_x_cb(void* obj, int32_t v) { lv_obj_set_x((lv_obj_t*)obj, v); }
 
 static void apply_meeting_title(void) {
-    int16_t y, room;
-    const lv_font_t* f = layout_title_font_for(L, title_meeting, &y, &room);
-    if (!f) return;
-    lv_obj_set_style_text_font(lbl_title, f, 0);
-    lv_label_set_long_mode(lbl_title, LV_LABEL_LONG_DOT);   // too long even small: cut with an ellipsis
-    lv_obj_set_width(lbl_title, room);
-    lv_obj_set_style_text_align(lbl_title, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_text(lbl_title, title_meeting);
-    lv_obj_align(lbl_title, LV_ALIGN_TOP_MID, L.title_cx - L.w / 2, y);
-    lv_obj_clear_flag(lbl_title, LV_OBJ_FLAG_HIDDEN);
+    lv_anim_delete(lbl_meeting, meeting_x_cb);
+    int16_t mid = 0;
+    const int16_t room = layout_title_room(L, &mid);
+    if (!title_meeting[0] || room <= 0) {
+        lv_obj_add_flag(meeting_clip, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    lv_obj_add_flag(lbl_title, LV_OBJ_FLAG_HIDDEN);
+    const int32_t h = lv_font_get_line_height(L.status_font);
+    lv_obj_set_size(meeting_clip, room, h);
+    lv_obj_align(meeting_clip, LV_ALIGN_TOP_MID, L.title_cx - L.w / 2, mid - h / 2);
+    lv_obj_set_style_text_font(lbl_meeting, L.status_font, 0);
+    const int32_t w = layout_text_width(L.status_font, title_meeting);
+    if (w <= room) {
+        lv_label_set_text(lbl_meeting, title_meeting);
+        lv_obj_set_width(lbl_meeting, w);
+        lv_obj_set_x(lbl_meeting, (room - w) / 2);
+    } else {
+        char run[sizeof(title_meeting) * 2 + sizeof(MEETING_GAP)];
+        snprintf(run, sizeof(run), "%s" MEETING_GAP, title_meeting);
+        const int32_t pass = layout_text_width(L.status_font, run);   // one copy and the gap
+        snprintf(run, sizeof(run), "%s" MEETING_GAP "%s", title_meeting, title_meeting);
+        lv_label_set_text(lbl_meeting, run);
+        lv_obj_set_width(lbl_meeting, layout_text_width(L.status_font, run) + 1);
+        lv_obj_set_x(lbl_meeting, 0);
+        lv_anim_t a;
+        lv_anim_init(&a);
+        lv_anim_set_var(&a, lbl_meeting);
+        lv_anim_set_exec_cb(&a, meeting_x_cb);
+        lv_anim_set_values(&a, 0, -pass);
+        lv_anim_set_duration(&a, (uint32_t)(pass * 1000 / MEETING_PX_PER_S));
+        lv_anim_set_delay(&a, MEETING_HOLD_MS);
+        lv_anim_set_repeat_delay(&a, MEETING_HOLD_MS);
+        lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
+        lv_anim_start(&a);
+    }
+    lv_obj_clear_flag(meeting_clip, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void apply_title_font(void) {
-    if (title_meeting[0]) { apply_meeting_title(); return; }
+    apply_meeting_title();
+    if (title_meeting[0]) return;
     lv_label_set_long_mode(lbl_title, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(lbl_title, LV_SIZE_CONTENT);
     const int fmt = clock_base_epoch > 0 && clock_fmt == 12 ? 1 : 0;
@@ -453,6 +491,15 @@ static void init_usage_screen(lv_obj_t* scr) {
     lbl_title = lv_label_create(usage_container);
     lv_label_set_text(lbl_title, S->title);
     lv_obj_set_style_text_color(lbl_title, COL_TEXT, 0);
+    meeting_clip = lv_obj_create(usage_container);
+    lv_obj_set_style_bg_opa(meeting_clip, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(meeting_clip, 0, 0);
+    lv_obj_set_style_pad_all(meeting_clip, 0, 0);
+    lv_obj_clear_flag(meeting_clip, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(meeting_clip, LV_OBJ_FLAG_HIDDEN);
+    lbl_meeting = lv_label_create(meeting_clip);
+    lv_label_set_long_mode(lbl_meeting, LV_LABEL_LONG_CLIP);   // as wide as its text: the clip cuts it
+    lv_obj_set_style_text_color(lbl_meeting, COL_TEXT, 0);
     apply_title_font();
 
     // Usage panels (shown when connected) live in a transparent full-size group

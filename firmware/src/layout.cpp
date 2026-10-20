@@ -479,20 +479,10 @@ Layout layout_compute(const LayoutShape& shape) {
 // between the logo and the battery, and its top y on the title's centre
 // line; the smallest when none does (the caller cuts the text). `room` gets
 // the width available.
-const lv_font_t* layout_title_font_for(const Layout& L, const char* text, int16_t* y, int16_t* room) {
+int16_t layout_title_room(const Layout& L, int16_t* mid_y) {
+    if (!L.title_font[0]) return 0;
     const int16_t left = L.title_cx - (L.logo_x + logo_w(L));
     const int16_t right = L.batt_x - L.title_cx;
-    const int16_t r = 2 * ((left < right ? left : right) - TITLE_GAP);
-    if (room) *room = r;
-    if (!L.title_font[0]) return nullptr;
-    const int16_t mid = 2 * L.title_y[0] + line_h(L.title_font[0]);
-    int i = 0;
-    while (i < TITLE_FONT_COUNT - 1 && TITLE_FONTS[i] != L.title_font[0]) i++;
-    const lv_font_t* f = TITLE_FONTS[i];
-    for (; i < TITLE_FONT_COUNT; i++) {
-        f = TITLE_FONTS[i];
-        if (layout_text_width(f, text) <= r) break;
-    }
-    if (y) *y = (mid - line_h(f)) / 2;
-    return f;
+    if (mid_y) *mid_y = L.title_y[0] + line_h(L.title_font[0]) / 2;
+    return 2 * ((left < right ? left : right) - TITLE_GAP);
 }
