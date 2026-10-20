@@ -16,6 +16,7 @@ pub mod daemon;
 pub mod diff;
 pub mod errors;
 pub mod hooks;
+pub mod i18n;
 pub mod ipc;
 pub mod logger;
 pub mod mcp;
@@ -125,8 +126,8 @@ pub fn claude_label(claude: &std::path::Path, home: &std::path::Path) -> String 
         let version = desktop_claude_root(home)
             .and_then(|r| claude.strip_prefix(r).ok().and_then(|rest| rest.iter().next()).map(|v| v.to_owned()));
         return match version {
-            Some(v) => format!("the Claude desktop app's Claude Code {}", v.to_string_lossy()),
-            None => "the Claude desktop app's Claude Code".into(),
+            Some(v) => i18n::trf("the Claude desktop app's Claude Code {}", &[&v.to_string_lossy()]),
+            None => i18n::tr("the Claude desktop app's Claude Code").into(),
         };
     }
     tilde(&claude.display().to_string(), home)
@@ -135,9 +136,9 @@ pub fn claude_label(claude: &std::path::Path, home: &std::path::Path) -> String 
 /// "12 s ago" / "3 min ago" / "2 h ago".
 pub fn ago(secs: i64) -> String {
     match secs.max(0) {
-        s if s < 60 => format!("{s} s ago"),
-        s if s < 3600 => format!("{} min ago", s / 60),
-        s => format!("{} h ago", s / 3600),
+        s if s < 60 => i18n::trf("{} s ago", &[&s]),
+        s if s < 3600 => i18n::trf("{} min ago", &[&(s / 60)]),
+        s => i18n::trf("{} h ago", &[&(s / 3600)]),
     }
 }
 

@@ -16,6 +16,8 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Map, Value};
 
+use crate::i18n::{tr, trf};
+
 /// The legacy shell hook's file name.
 pub const LEGACY_SCRIPT: &str = "attention-hook.sh";
 
@@ -182,9 +184,11 @@ impl std::fmt::Display for HookError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             HookError::Parse(_) => {
-                write!(f, "settings.json contains invalid JSON. Fix the file, then retry. Nothing was written.")
+                f.write_str(tr("settings.json contains invalid JSON. Fix the file, then retry. Nothing was written."))
             }
-            HookError::Shape(w) => write!(f, "Unsupported settings.json layout: {w}. Nothing was written."),
+            HookError::Shape(w) => {
+                f.write_str(&trf("Unsupported settings.json layout: {}. Nothing was written.", &[&tr(w)]))
+            }
             HookError::Io(e) => write!(f, "{}", crate::errors::io_message(e)),
         }
     }

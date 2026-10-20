@@ -12,17 +12,20 @@ mod event_loop;
 #[cfg(target_os = "linux")]
 mod sni;
 
+use std::cell::Cell;
 use std::process::{Child, Command as Proc};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use clawdmeter_core::config::Lang;
 use clawdmeter_core::{unix_now, Paths, Settings};
 use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 
 use crate::art::{tray_icon_rgba, TrayState};
 use crate::daemon::{self, Command, DaemonHandle};
+use crate::i18n::{tr, trf};
 use crate::ipc::{self, AppCommand, StatusSnapshot};
 use crate::{ago, tilde, Page};
 
@@ -72,22 +75,25 @@ struct Items {
     update: MenuItem,
     settings: MenuItem,
     quit: MenuItem,
+    /// The language the fixed labels are in.
+    lang: Cell<Lang>,
 }
 
 impl Items {
     fn new() -> Self {
         let it = Items {
             menu: Menu::new(),
-            status: MenuItem::new("Clawdmeter · Starting", false, None),
-            account: MenuItem::new("No usage data yet", false, None),
-            session: MenuItem::new("Session  –", false, None),
-            weekly: MenuItem::new("Weekly  –", false, None),
-            refresh: MenuItem::new("Refresh usage", true, None),
-            mute: CheckMenuItem::new("Mute chimes", true, false, None),
-            open: MenuItem::new("Open Clawdmeter", true, None),
-            update: MenuItem::new("Flash firmware…", true, None),
-            settings: MenuItem::new("Settings…", true, None),
-            quit: MenuItem::new("Quit Clawdmeter", true, None),
+            status: MenuItem::new(format!("Clawdmeter · {}", tr("Starting")), false, None),
+            account: MenuItem::new(tr("No usage data yet"), false, None),
+            session: MenuItem::new(tr("Session  –"), false, None),
+            weekly: MenuItem::new(tr("Weekly  –"), false, None),
+            refresh: MenuItem::new(tr("Refresh usage"), true, None),
+            mute: CheckMenuItem::new(tr("Mute chimes"), true, false, None),
+            open: MenuItem::new(tr("Open Clawdmeter"), true, None),
+            update: MenuItem::new(tr("Flash firmware…"), true, None),
+            settings: MenuItem::new(tr("Settings…"), true, None),
+            quit: MenuItem::new(tr("Quit Clawdmeter"), true, None),
+            lang: Cell::new(crate::i18n::lang()),
         };
         let _ = it.menu.append_items(&[
             &it.status,
@@ -108,34 +114,43 @@ impl Items {
         it
     }
 
+    /// The labels that don't follow the status, again after a language change.
+    fn relabel(&self) {
+        self.refresh.set_text(tr("Refresh usage"));
+        self.mute.set_text(tr("Mute chimes"));
+        self.open.set_text(tr("Open Clawdmeter"));
+        self.settings.set_text(tr("Settings…"));
+        self.quit.set_text(tr("Quit Clawdmeter"));
+    }
+
     fn update(&self, snap: &StatusSnapshot, paths: &Paths, chimes_on: bool, now: i64) {
-        let state = snap.tray_state();
-        let mut label = state.label().to_owned();
-        if snap.link == "no_adapter" {
-            label = "Bluetooth unavailable".into();
+        let lang = crate::i18n::lang();
+        if self.lang.replace(lang) != lang {
+            self.relabel();
         }
+        let label = if snap.link == "no_adapter" { tr("Bluetooth unavailable") } else { tr(snap.tray_state().label()) };
         self.status.set_text(format!("Clawdmeter · {label}"));
         let account = snap.account.as_deref().map(|a| tilde(a, &paths.home));
         self.account.set_text(match (account, snap.age(now)) {
-            (Some(a), Some(age)) => format!("{a} · updated {}", ago(age)),
+            (Some(a), Some(age)) => trf("{} · updated {}", &[&a, &ago(age)]),
             (Some(a), None) => a,
-            (None, _) if snap.logged_out => "Open Claude Code to sign in".into(),
-            (None, _) => "No usage data yet".into(),
+            (None, _) if snap.logged_out => tr("Open Claude Code to sign in").into(),
+            (None, _) => tr("No usage data yet").into(),
         });
         self.session.set_text(match snap.session_pct {
-            Some(p) if snap.window_started => format!("Session  {p}%"),
-            Some(_) => "Session  not started".into(),
-            None => "Session  –".into(),
+            Some(p) if snap.window_started => trf("Session  {}%", &[&p]),
+            Some(_) => tr("Session  not started").into(),
+            None => tr("Session  –").into(),
         });
         self.weekly.set_text(match snap.week_pct {
-            Some(p) => format!("Weekly  {p}%"),
-            None => "Weekly  –".into(),
+            Some(p) => trf("Weekly  {}%", &[&p]),
+            None => tr("Weekly  –").into(),
         });
         self.mute.set_checked(snap.chimes_muted);
         self.mute.set_enabled(chimes_on);
         self.update.set_text(match snap.update_available() {
-            Some(v) => format!("Update firmware to {}…", display_version(v)),
-            None => "Flash firmware…".into(),
+            Some(v) => trf("Update firmware to {}…", &[&display_version(v)]),
+            None => tr("Flash firmware…").into(),
         });
     }
 }
@@ -153,9 +168,9 @@ fn icon_for(state: TrayState) -> Option<Icon> {
 }
 
 fn tooltip(snap: &StatusSnapshot) -> String {
-    let mut t = format!("Clawdmeter · {}", snap.tray_state().label());
+    let mut t = format!("Clawdmeter · {}", tr(snap.tray_state().label()));
     if let (Some(s), Some(w)) = (snap.session_pct, snap.week_pct) {
-        t.push_str(&format!(" · Session {s}% · Weekly {w}%"));
+        t.push_str(&trf(" · Session {}% · Weekly {}%", &[&s, &w]));
     }
     t
 }
@@ -280,6 +295,7 @@ impl TrayApp {
         if now - self.settings_at >= 5 {
             self.settings_at = now;
             if let Ok(s) = Settings::load(&self.paths) {
+                crate::i18n::set(s.lang);
                 self.settings = s;
             }
         }
@@ -465,6 +481,7 @@ fn run_locked(paths: Paths, _lock: Option<std::fs::File>) -> i32 {
     let check_now = Arc::new(AtomicBool::new(false));
     spawn_update_checker(paths.clone(), latest.clone(), check_now.clone());
     let settings = Settings::load(&paths).unwrap_or_else(|_| Settings::from_config(&Default::default(), &paths, None));
+    crate::i18n::set(settings.lang);
     let mut app = TrayApp {
         daemon: Some(daemon::spawn(paths.clone())),
         paths,

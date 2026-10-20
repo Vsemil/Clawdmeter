@@ -10,6 +10,7 @@ use super::widgets::{
 };
 use super::{command, live_status, not_running_text, Navigate, REFRESH};
 use crate::art::TrayState;
+use crate::i18n::{tr, trf};
 use crate::ipc::{AppCommand, StatusSnapshot};
 use crate::{ago, tilde, Page};
 
@@ -84,11 +85,19 @@ const REFRESH_GIVE_UP_SECS: i64 = 60;
 /// "1 min 40 s" for a wait.
 fn wait_text(secs: i64) -> String {
     match secs.max(1) {
-        s if s < 60 => format!("{s} s"),
-        s if s < 3600 && s % 60 == 0 => format!("{} min", s / 60),
-        s if s < 3600 => format!("{} min {} s", s / 60, s % 60),
-        s => format!("{} h {} min", s / 3600, (s % 3600) / 60),
+        s if s < 60 => trf("{} s", &[&s]),
+        s if s < 3600 && s % 60 == 0 => trf("{} min", &[&(s / 60)]),
+        s if s < 3600 => trf("{} min {} s", &[&(s / 60), &(s % 60)]),
+        s => trf("{} h {} min", &[&(s / 3600), &((s % 3600) / 60)]),
     }
+}
+
+/// "Usage paused by Anthropic until 14:05" (`usage::paused_message`, in the
+/// interface language and without the full stop).
+fn paused_text(until: i64, utc_offset: i64) -> String {
+    let secs = (until + utc_offset).rem_euclid(86_400);
+    let at = format!("{:02}:{:02}", secs / 3600, secs % 3600 / 60);
+    trf("Usage paused by Anthropic until {}", &[&at])
 }
 
 /// What the refresh button can do right now.
@@ -137,12 +146,12 @@ pub fn state_tone(state: TrayState) -> Tone {
 /// One headline for the link and data state.
 pub fn state_title(s: &StatusSnapshot) -> &'static str {
     match (s.link.as_str(), s.tray_state()) {
-        ("no_adapter", _) => "Bluetooth unavailable",
-        (_, TrayState::Connected) => "Connected",
-        (_, TrayState::Stale) => "Usage out of date",
-        (_, TrayState::Searching) => "Looking for Clawdmeter",
-        (_, TrayState::AuthError) => "Signed out of Claude Code",
-        (_, TrayState::Attention) => "Claude needs you",
+        ("no_adapter", _) => tr("Bluetooth unavailable"),
+        (_, TrayState::Connected) => tr("Connected"),
+        (_, TrayState::Stale) => tr("Usage out of date"),
+        (_, TrayState::Searching) => tr("Looking for Clawdmeter"),
+        (_, TrayState::AuthError) => tr("Signed out of Claude Code"),
+        (_, TrayState::Attention) => tr("Claude needs you"),
     }
 }
 
@@ -150,9 +159,9 @@ pub fn state_title(s: &StatusSnapshot) -> &'static str {
 pub fn reset_text(resets_at: Option<i64>, now: i64, none: &str) -> String {
     let Some(t) = resets_at else { return none.to_owned() };
     match (t - now).max(0) / 60 {
-        m if m < 60 => format!("Resets in {m}m"),
-        m if m < 1440 => format!("Resets in {}h {}m", m / 60, m % 60),
-        m => format!("Resets in {}d {}h", m / 1440, (m % 1440) / 60),
+        m if m < 60 => trf("Resets in {}m", &[&m]),
+        m if m < 1440 => trf("Resets in {}h {}m", &[&(m / 60), &(m % 60)]),
+        m => trf("Resets in {}d {}h", &[&(m / 1440), &((m % 1440) / 60)]),
     }
 }
 
@@ -216,13 +225,13 @@ impl Render for OverviewView {
         let now = clawdmeter_core::unix_now();
         let home = self.paths.home.clone();
         let (tone, title, sub) = match &self.snap {
-            None => (Tone::Plain, "Not running", not_running_text().to_string()),
+            None => (Tone::Plain, tr("Not running"), not_running_text().to_string()),
             Some(s) => {
                 let sub = match (&s.account, s.age(now)) {
-                    _ if s.logged_out => "Open Claude Code in a terminal and sign in.".into(),
-                    (Some(a), Some(age)) => format!("{} · updated {}", tilde(a, &home), ago(age)),
+                    _ if s.logged_out => tr("Open Claude Code in a terminal and sign in.").into(),
+                    (Some(a), Some(age)) => trf("{} · updated {}", &[&tilde(a, &home), &ago(age)]),
                     (Some(a), None) => tilde(a, &home),
-                    (None, _) => "No usage data yet".into(),
+                    (None, _) => tr("No usage data yet").into(),
                 };
                 (state_tone(s.tray_state()), state_title(s), sub)
             }
@@ -262,13 +271,13 @@ impl Render for OverviewView {
                 .cursor_pointer()
                 .hover(move |s| s.text_color(text))
                 .on_click(cx.listener(|_, _, _, cx| cx.emit(Navigate(Page::Setup))))
-                .child("Run setup guide again"),
+                .child(tr("Run setup guide again")),
         );
         let on = self.desktop_chime;
         let chime = field(
             &t,
-            "Play a chime on this computer when Claude needs you",
-            "Follows the alert types on the Hooks page. Mute from the tray until restart.",
+            tr("Play a chime on this computer when Claude needs you"),
+            tr("Follows the alert types on the Hooks page. Mute from the tray until restart."),
             toggle(
                 &t,
                 "desktop-chime",
@@ -293,17 +302,17 @@ impl Render for OverviewView {
                 .flex()
                 .flex_col()
                 .gap(px(12.))
-                .child(meter(&t, "Session", s.session_pct, reset_text(s.session_resets_at, now, "Not started")))
-                .child(meter(&t, "Weekly", s.week_pct, reset_text(s.week_resets_at, now, "---"))),
+                .child(meter(&t, tr("Session"), s.session_pct, reset_text(s.session_resets_at, now, tr("Not started"))))
+                .child(meter(&t, tr("Weekly"), s.week_pct, reset_text(s.week_resets_at, now, "---"))),
         );
         if let Some(v) = s.update_available() {
             let v = v.trim_start_matches('v').to_owned();
             page = page.child(
-                notice(&t, Tone::Accent, format!("Firmware v{v} is available. Connect USB to update.")).child(
+                notice(&t, Tone::Accent, trf("Firmware v{} is available. Connect USB to update.", &[&v])).child(
                     div().flex().pl(px(18.)).child(button(
                         &t,
                         "go-update",
-                        "Update firmware",
+                        tr("Update firmware"),
                         ButtonKind::Primary,
                         true,
                         cx.listener(|_, _, _, cx| cx.emit(Navigate(Page::Flash))),
@@ -321,19 +330,16 @@ impl OverviewView {
     fn refresh_control(&self, t: &Theme, s: &StatusSnapshot, now: i64, cx: &mut Context<Self>) -> impl IntoElement {
         let state = refresh_state(s, self.refreshing.is_some(), now);
         let note: Option<SharedString> = match &state {
-            RefreshState::Checking => Some("Checking…".into()),
-            RefreshState::Wait(secs) => Some(format!("Can check again in {}", wait_text(*secs)).into()),
-            RefreshState::Paused(until) => Some(
-                clawdmeter_core::usage::paused_message(*until, clawdmeter_core::platform::utc_offset_secs())
-                    .trim_end_matches('.')
-                    .to_owned()
-                    .into(),
-            ),
+            RefreshState::Checking => Some(tr("Checking…").into()),
+            RefreshState::Wait(secs) => Some(trf("Can check again in {}", &[&wait_text(*secs)]).into()),
+            RefreshState::Paused(until) => {
+                Some(paused_text(*until, clawdmeter_core::platform::utc_offset_secs()).into())
+            }
             RefreshState::Ready => None,
         };
         let checking = state == RefreshState::Checking;
         let button =
-            icon_button(t, "refresh", "refresh-cw", "Refresh usage", state == RefreshState::Ready, checking, {
+            icon_button(t, "refresh", "refresh-cw", tr("Refresh usage"), state == RefreshState::Ready, checking, {
                 cx.listener(|v, _, _, cx| {
                     command(&v.paths, AppCommand::Refresh);
                     v.refreshing = Some(clawdmeter_core::unix_now());
@@ -374,6 +380,17 @@ mod tests {
         assert_eq!(reset_text(Some(59 * 60 + 30), 0, "---"), "Resets in 59m");
         assert_eq!(reset_text(Some(177 * 60), 0, "---"), "Resets in 2h 57m");
         assert_eq!(reset_text(Some(5 * 1440 * 60 + 11 * 3600), 0, "---"), "Resets in 5d 11h");
+    }
+
+    #[test]
+    fn paused_text_shows_the_local_time() {
+        assert_eq!(paused_text(14 * 3600 + 5 * 60, 0), "Usage paused by Anthropic until 14:05");
+        assert_eq!(paused_text(23 * 3600, 3 * 3600), "Usage paused by Anthropic until 02:00");
+        assert_eq!(
+            paused_text(4_600, 0),
+            clawdmeter_core::usage::paused_message(4_600, 0).trim_end_matches('.'),
+            "the same text as the tray's"
+        );
     }
 
     #[test]

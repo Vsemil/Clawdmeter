@@ -316,6 +316,12 @@ impl BoardInfo {
     pub fn illustration(&self) -> String {
         format!("boards/{}.svg", self.env)
     }
+
+    /// [`Self::summary`] in the interface language, part by part (the
+    /// resolution and panel types stay as they are).
+    pub fn summary_text(&self) -> String {
+        self.summary.split(" · ").map(crate::i18n::tr).collect::<Vec<_>>().join(" · ")
+    }
 }
 
 #[cfg(test)]

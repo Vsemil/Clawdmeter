@@ -179,7 +179,7 @@ impl ClockMode {
     }
 }
 
-/// `lang`: the device's interface language (`lg`). The device keeps it and
+/// `lang`: the interface language of the device (`lg`) and the app. The device keeps it and
 /// restarts into it, so its layout fits that language's words.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Lang {

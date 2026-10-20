@@ -13,6 +13,7 @@ use super::settings::SettingsView;
 use super::theme::{Theme, FONT_DISPLAY, R_PILL};
 use super::widgets::{button, card, clawd, dot, notice, para, pill, ButtonKind, Tone};
 use super::{live_status, REFRESH};
+use crate::i18n::{tr, trf};
 use crate::Page;
 
 /// The wizard's steps.
@@ -30,7 +31,10 @@ pub enum Step {
     Done,
 }
 
-const LABELS: [&str; 6] = ["Welcome", "Your board", "Flash", "Pair", "Hooks", "Done"];
+/// The step names along the top.
+fn labels() -> [&'static str; 6] {
+    [tr("Welcome"), tr("Your board"), tr("Flash"), tr("Pair"), tr("Hooks"), tr("Done")]
+}
 
 /// What happened to the board in this run of the wizard.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -197,7 +201,7 @@ impl SetupView {
     fn progress(&self, t: &Theme, cx: &Context<Self>) -> impl IntoElement {
         let at = self.index(cx);
         let mut row = div().flex().items_center().justify_center().gap(px(4.)).flex_wrap();
-        for (i, label) in LABELS.iter().enumerate() {
+        for (i, label) in labels().iter().enumerate() {
             let (done, on) = (i < at && self.completed(i, cx), i == at);
             row = row.child(
                 div()
@@ -235,16 +239,14 @@ impl SetupView {
             .gap(px(16.))
             .pt(px(24.))
             .child(clawd(7.))
-            .child(Self::title("Set up Clawdmeter"))
+            .child(Self::title(tr("Set up Clawdmeter")))
             .child(div().max_w(px(460.)).text_center().child(para(
                 t,
-                "See your Claude Code usage on your desk. Clawd reacts to activity and alerts you when a session \
-                 needs an answer.",
+                tr("See your Claude Code usage on your desk. Clawd reacts to activity and alerts you when a session needs an answer."),
             )))
             .child(div().max_w(px(460.)).text_center().child(para(
                 t,
-                "Connect your board with a USB data cable. Setup installs firmware, pairs Bluetooth, and optionally \
-                 adds Claude Code hooks. Claude Code, or the Claude desktop app, must be installed and signed in.",
+                tr("Connect your board with a USB data cable. Setup installs firmware, pairs Bluetooth, and optionally adds Claude Code hooks. Claude Code, or the Claude desktop app, must be installed and signed in."),
             )))
             .child(match &self.claude {
                 Some(c) => div()
@@ -252,13 +254,12 @@ impl SetupView {
                     .text_center()
                     .text_size(px(12.5))
                     .text_color(t.mute)
-                    .child(format!("Usage will be read with {}.", crate::claude_label(c, &self.paths.home)))
+                    .child(trf("Usage will be read with {}.", &[&crate::claude_label(c, &self.paths.home)]))
                     .into_any_element(),
                 None => notice(
                     t,
                     Tone::Plain,
-                    "Claude Code wasn't found, so usage will update every 12 minutes. Install Claude Code or the \
-                     Claude desktop app for updates while you work.",
+                    tr("Claude Code wasn't found, so usage will update every 12 minutes. Install Claude Code or the Claude desktop app for updates while you work."),
                 )
                 .max_w(px(460.))
                 .into_any_element(),
@@ -267,20 +268,19 @@ impl SetupView {
 
     fn pair(&self, t: &Theme, cx: &Context<Self>) -> gpui::Div {
         let how = if cfg!(target_os = "macos") {
-            "Open System Settings → Bluetooth and click Connect next to Clawdmeter."
+            tr("Open System Settings → Bluetooth and click Connect next to Clawdmeter.")
         } else if cfg!(windows) {
-            "Open Settings → Bluetooth & devices → Add device → Bluetooth, and choose Clawdmeter."
+            tr("Open Settings → Bluetooth & devices → Add device → Bluetooth, and choose Clawdmeter.")
         } else {
-            "Open your desktop's Bluetooth settings and pair Clawdmeter. From a terminal: bluetoothctl, then \
-             scan on, pair <address> and trust <address>."
+            tr("Open your desktop's Bluetooth settings and pair Clawdmeter. From a terminal: bluetoothctl, then scan on, pair <address> and trust <address>.")
         };
         let status = match (self.running, self.connected) {
-            (_, true) => pill(t, "Connected", Tone::Ok).into_any_element(),
-            (true, false) => pill(t, "Waiting for Bluetooth connection", Tone::Accent).into_any_element(),
+            (_, true) => pill(t, tr("Connected"), Tone::Ok).into_any_element(),
+            (true, false) => pill(t, tr("Waiting for Bluetooth connection"), Tone::Accent).into_any_element(),
             (false, false) => notice(
                 t,
                 Tone::Plain,
-                "The background process isn't running. Pair the device, then start Clawdmeter to check the connection.",
+                tr("The background process isn't running. Pair the device, then start Clawdmeter to check the connection."),
             )
             .w(px(520.))
             .into_any_element(),
@@ -291,11 +291,10 @@ impl SetupView {
             .items_center()
             .gap(px(16.))
             .pt(px(12.))
-            .child(Self::title("Pair over Bluetooth"))
+            .child(Self::title(tr("Pair over Bluetooth")))
             .child(div().max_w(px(500.)).text_center().child(para(
                 t,
-                "Pair Clawdmeter in your computer's Bluetooth settings. It appears as a keyboard so its buttons can \
-                 send key presses.",
+                tr("Pair Clawdmeter in your computer's Bluetooth settings. It appears as a keyboard so its buttons can send key presses."),
             )))
             .child(
                 card(t).w(px(520.)).child(div().text_size(px(14.)).line_height(px(21.)).child(how)).child(
@@ -314,23 +313,21 @@ impl SetupView {
             let s = self.settings.read(cx);
             (s.installed_hooks(), s.hook_accounts())
         };
-        let mut d = div().flex().flex_col().gap(px(16.)).pt(px(12.)).child(Self::title("Add Claude Code hooks")).child(
+        let mut d = div().flex().flex_col().gap(px(16.)).pt(px(12.)).child(Self::title(tr("Add Claude Code hooks"))).child(
             div().flex().justify_center().child(div().max_w(px(520.)).text_center().child(para(
                 t,
-                "Hooks let Clawd react to activity and show alerts. They store event metadata locally, plus \
-                     notification or question text for alerts.",
+                tr("Hooks let Clawd react to activity and show alerts. They store event metadata locally, plus notification or question text for alerts."),
             ))),
         );
         // Only every account installed skips the list; an unreadable one
         // stays in view with its error.
         if installed > 0 && installed == total {
-            let accounts =
-                if installed == 1 { "your account".to_string() } else { format!("all {installed} accounts") };
-            d = d.child(div().flex().justify_center().child(pill(
-                t,
-                SharedString::from(format!("Hooks installed in {accounts}")),
-                Tone::Ok,
-            )));
+            let text: SharedString = if installed == 1 {
+                tr("Hooks installed in your account").into()
+            } else {
+                trf("Hooks installed in all {} accounts", &[&installed]).into()
+            };
+            d = d.child(div().flex().justify_center().child(pill(t, text, Tone::Ok)));
         } else {
             d = d.child(self.settings.clone());
         }
@@ -339,16 +336,16 @@ impl SetupView {
 
     fn done(&self, t: &Theme, cx: &mut Context<Self>) -> gpui::Div {
         let board = match self.board {
-            Some(BoardOutcome::Flashed) => ("Latest firmware installed", Tone::Ok),
-            Some(BoardOutcome::UpToDate) => ("Firmware up to date", Tone::Ok),
+            Some(BoardOutcome::Flashed) => (tr("Latest firmware installed"), Tone::Ok),
+            Some(BoardOutcome::UpToDate) => (tr("Firmware up to date"), Tone::Ok),
             Some(BoardOutcome::Skipped) | None => {
-                ("Firmware not installed in this setup. Use Flash to install it.", Tone::Plain)
+                (tr("Firmware not installed in this setup. Use Flash to install it."), Tone::Plain)
             }
         };
         let link = if self.connected {
-            ("Bluetooth connected", Tone::Ok)
+            (tr("Bluetooth connected"), Tone::Ok)
         } else {
-            ("Not connected. Pair in Bluetooth settings.", Tone::Plain)
+            (tr("Not connected. Pair in Bluetooth settings."), Tone::Plain)
         };
         let (installed, total, unreadable) = {
             let s = self.settings.read(cx);
@@ -357,14 +354,14 @@ impl SetupView {
         let hooks: (SharedString, Tone) = {
             let unread = match unreadable {
                 0 => String::new(),
-                1 => " Couldn't read 1 account.".into(),
-                n => format!(" Couldn't read {n} accounts."),
+                1 => tr(" Couldn't read 1 account.").into(),
+                n => trf(" Couldn't read {} accounts.", &[&n]),
             };
             match installed {
-                0 if unreadable == 0 => ("Hooks not installed. Add them from Hooks.".into(), Tone::Plain),
+                0 if unreadable == 0 => (tr("Hooks not installed. Add them from Hooks.").into(), Tone::Plain),
                 n => {
                     let tone = if n == total { Tone::Ok } else { Tone::Plain };
-                    (format!("Hooks installed in {n} of {total} accounts.{unread}").into(), tone)
+                    (trf("Hooks installed in {} of {} accounts.{}", &[&n, &total, &unread]).into(), tone)
                 }
             }
         };
@@ -374,8 +371,8 @@ impl SetupView {
         let (board, link) = ((SharedString::from(board.0), board.1), (SharedString::from(link.0), link.1));
         let after = match (self.running, self.windowed) {
             (false, _) => None,
-            (true, true) => Some("Keep this window open to update usage."),
-            (true, false) => Some("Clawdmeter keeps running in the tray. Open it there to view usage or settings."),
+            (true, true) => Some(tr("Keep this window open to update usage.")),
+            (true, false) => Some(tr("Clawdmeter keeps running in the tray. Open it there to view usage or settings.")),
         };
         div()
             .flex()
@@ -384,7 +381,7 @@ impl SetupView {
             .gap(px(16.))
             .pt(px(24.))
             .child(clawd(6.))
-            .child(Self::title("Setup summary"))
+            .child(Self::title(tr("Setup summary")))
             .child(card(t).min_w(px(380.)).gap(px(12.)).child(row(board)).child(row(link)).child(row(hooks)))
             .when_some(after, |d, a| d.child(div().max_w(px(460.)).text_center().child(para(t, a))))
     }
@@ -394,15 +391,13 @@ impl SetupView {
 fn unpair_hint(board: Option<&crate::boards::BoardInfo>) -> &'static str {
     match board {
         Some(b) if b.pwr_button => {
-            "Paired with another computer before? Hold PWR for 3 seconds, then release to clear the old pairing."
+            tr("Paired with another computer before? Hold PWR for 3 seconds, then release to clear the old pairing.")
         }
         Some(_) => {
-            "Paired with another computer before? While the screen shows the pairing hint, hold a finger on it \
-             for 5 seconds to clear the old pairing."
+            tr("Paired with another computer before? While the screen shows the pairing hint, hold a finger on it for 5 seconds to clear the old pairing.")
         }
         None => {
-            "Paired with another computer before? Hold PWR for 3 seconds, then release to clear the old \
-             pairing. On boards without a PWR button, hold the screen for 5 seconds while it shows the pairing hint."
+            tr("Paired with another computer before? Hold PWR for 3 seconds, then release to clear the old pairing. On boards without a PWR button, hold the screen for 5 seconds while it shows the pairing hint.")
         }
     }
 }
@@ -431,7 +426,7 @@ impl Render for SetupView {
             right = right.child(button(
                 &t,
                 "setup-back",
-                "Back",
+                tr("Back"),
                 ButtonKind::Small,
                 !busy,
                 cx.listener(move |v, _, _, cx| {
@@ -457,7 +452,7 @@ impl Render for SetupView {
             Step::Welcome => right.child(button(
                 &t,
                 "setup-next",
-                "Start setup",
+                tr("Start setup"),
                 ButtonKind::Primary,
                 true,
                 cx.listener(|v, _, _, cx| v.goto(Step::Device, cx)),
@@ -466,7 +461,7 @@ impl Render for SetupView {
             Step::Device => right.child(button(
                 &t,
                 "setup-next",
-                "Skip this step",
+                tr("Skip this step"),
                 ButtonKind::Normal,
                 !busy,
                 cx.listener(|v, _, _, cx| {
@@ -481,11 +476,11 @@ impl Render for SetupView {
                 let pending = self.step == Step::Hooks && self.settings.read(cx).pending_hooks() > 0;
                 let unpaired = self.step == Step::Pair && !self.connected;
                 let (label, kind) = if pending {
-                    ("Skip hooks", ButtonKind::Normal)
+                    (tr("Skip hooks"), ButtonKind::Normal)
                 } else if unpaired {
-                    ("Continue without pairing", ButtonKind::Normal)
+                    (tr("Continue without pairing"), ButtonKind::Normal)
                 } else {
-                    ("Continue", ButtonKind::Primary)
+                    (tr("Continue"), ButtonKind::Primary)
                 };
                 right.child(button(
                     &t,
@@ -499,7 +494,7 @@ impl Render for SetupView {
             Step::Done => right.child(button(
                 &t,
                 "setup-finish",
-                "Open Clawdmeter",
+                tr("Open Clawdmeter"),
                 ButtonKind::Primary,
                 true,
                 cx.listener(|v, _, _, cx| v.finish(cx)),
@@ -524,7 +519,7 @@ impl Render for SetupView {
                     .cursor_pointer()
                     .hover(|s| s.text_color(t.text))
                     .when(self.step != Step::Done && !busy, |d| {
-                        d.child("Skip setup").on_click(cx.listener(|v, _, _, cx| v.finish(cx)))
+                        d.child(tr("Skip setup")).on_click(cx.listener(|v, _, _, cx| v.finish(cx)))
                     }),
             )
             .child(right);
