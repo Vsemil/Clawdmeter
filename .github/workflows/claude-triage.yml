@@ -18,7 +18,9 @@ jobs:
   triage:
     # Only outside contributions: the owner's own issues and PRs (including
     # agent-opened ones under his account) and bots are skipped.
+    # Upstream's bot: never on a fork.
     if: >-
+      github.repository == 'HermannBjorgvin/Clawdmeter' &&
       !endsWith(github.actor, '[bot]') &&
       (github.event.issue.author_association || github.event.pull_request.author_association) != 'OWNER'
     runs-on: ubuntu-latest

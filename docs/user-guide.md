@@ -6,7 +6,7 @@ See the [supported boards](../README.md#supported-boards).
 
 ## Installation
 
-Download the installer for your OS from the [latest release](https://github.com/HermannBjorgvin/Clawdmeter/releases/latest).
+Download the installer for your OS from the [latest release](https://github.com/Vsemil/Clawdmeter/releases/latest).
 The macOS and Windows packages are not signed with a publisher certificate.
 
 | OS | File | Install |
@@ -15,7 +15,7 @@ The macOS and Windows packages are not signed with a publisher certificate.
 | Windows | `clawdmeter-<version>-windows-x86_64.msi` | Run it. If SmartScreen stops it, click **More info → Run anyway**. Installs for your user only (no admin) with a Start Menu entry; newer versions upgrade in place. |
 | Debian, Ubuntu | `clawdmeter_<version>_amd64.deb` | `sudo apt install ./clawdmeter_<version>_amd64.deb` |
 | Other Linux | `clawdmeter-<version>-x86_64.AppImage` | `chmod +x clawdmeter-*.AppImage` and run it. Keep it in one place: Start at login opens the file. The Claude Code hooks run a copy of its binary in `~/.config/clawdmeter/appimage/`, renewed when the AppImage changes. |
-| NixOS, Nix | — | `nix run github:HermannBjorgvin/Clawdmeter`, or see [Nix](#nix). |
+| NixOS, Nix | — | `nix run github:Vsemil/Clawdmeter`, or see [Nix](#nix). |
 
 Portable archives (`.tar.gz` for Linux and macOS, `.zip` for Windows) are on
 the same release if you'd rather not install anything.
@@ -32,7 +32,7 @@ package to your packages:
 
 ```nix
 # flake.nix
-inputs.clawdmeter.url = "github:HermannBjorgvin/Clawdmeter";
+inputs.clawdmeter.url = "github:Vsemil/Clawdmeter";
 
 # NixOS module
 environment.systemPackages = [ inputs.clawdmeter.packages.${pkgs.stdenv.hostPlatform.system}.default ];
@@ -195,7 +195,7 @@ seconds and preserves comments and unknown keys when saving.
 | `claude_path` | found on `PATH` | Full path to the Claude Code executable, if detection fails. |
 | `update_check` | `on` | Check for firmware releases daily. |
 | `alert_on` | `permission, question, elicitation` | Which waits alert on the device and tray: `permission`, `question`, `idle`, `elicitation` (MCP input), or `none`. Set on the Hooks page. Other notification types follow `permission`. |
-| `release_repo` | `HermannBjorgvin/Clawdmeter` | GitHub repository used for firmware releases. |
+| `release_repo` | `Vsemil/Clawdmeter` | GitHub repository used for firmware releases. |
 | `onboarding_done` | unset | `true` after setup is finished or skipped. |
 
 **Mute chimes** in the tray silences the alert chime and the desktop chime

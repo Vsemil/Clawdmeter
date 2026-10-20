@@ -61,6 +61,21 @@ this firmware behaves like upstream when the app doesn't send them.
 - The status line says "Resting" when Claude isn't working, and the screen
   goes dark after 5 minutes of it with nobody at the device, USB power or not.
 
+## A standalone fork
+
+- Its own releases: tags `vX.Y.Z-ru.N` on upstream's X.Y.Z, published as full
+  releases by `release.yml` (`-rc`/`-beta`/`-alpha` stay prereleases). The
+  app's default `release_repo` is `Vsemil/Clawdmeter`, so it flashes this
+  fork's firmware and offers its updates.
+- Install links, the Nix flake, the package metadata and CODEOWNERS point
+  here. Upstream's Claude bot workflows run only in upstream's repository.
+
+## Desktop app in Russian
+
+- Every window page, the setup wizard and the tray menu follow `lang`
+  (`i18n::tr`/`trf`, English text as the key, tables in `i18n/ru/`). A test
+  fails on any `tr`/`trf` literal without a translation.
+
 ## Tooling
 
 - `tools/packaging/macos-app.sh` builds and installs `Clawdmeter.app` for this

@@ -18,7 +18,9 @@ jobs:
   # out or executed. The commenter must have write access (double-gated: the
   # action's own check plus the if below).
   claude-review:
+    # Upstream's bot: never on a fork.
     if: |
+      github.repository == 'HermannBjorgvin/Clawdmeter' &&
       github.event_name == 'issue_comment' &&
       github.event.issue.pull_request &&
       startsWith(github.event.comment.body, '@claude review') &&

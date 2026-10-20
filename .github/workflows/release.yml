@@ -15,7 +15,8 @@ name: Release
 # Nothing is signed beyond the ad-hoc macOS signature; the README says how
 # to get past Gatekeeper and SmartScreen. Icons and the .desktop entry live in
 # tools/packaging/.
-# Tags with a hyphen (v1.9.0-rc.1) publish as prereleases, which the desktop
+# This fork tags vX.Y.Z-ru.N (upstream's X.Y.Z): full releases. Tags with
+# -rc/-beta/-alpha (v1.9.0-rc.1) publish as prereleases, which the desktop
 # app's "latest release" check skips.
 
 on:
@@ -273,5 +274,5 @@ jobs:
         with:
           files: dist/*
           generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
           fail_on_unmatched_files: true

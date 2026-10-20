@@ -35,8 +35,10 @@ full list is in [CHANGELOG-FORK.md](CHANGELOG-FORK.md).
 - **An MCP server.** `clawdmeter mcp` lets an assistant put its own message
   on the device.
 
-The releases linked below are upstream's. To run this fork, build the app
-from source; on macOS, `tools/packaging/macos-app.sh` builds and installs it.
+It is a standalone fork: its own releases (tags `vX.Y.Z-ru.N` on upstream's
+X.Y.Z), so the app flashes this fork's firmware and checks for updates here.
+On macOS, `tools/packaging/macos-app.sh` also builds and installs the app
+from source.
 
 ## Supported boards
 
@@ -66,10 +68,9 @@ Supported on every release.
 
 Ports contributed by the community. Expect rough edges: bugs, or a layout
 that isn't optimal for the panel. If something is off, fix it and open a PR.
-If everything works, tell us in the
+If everything works, say so in upstream's
 [Board support reports](https://github.com/HermannBjorgvin/Clawdmeter/discussions/222)
-discussion (env name, firmware version, a photo) and we'll move the board to
-Stable.
+discussion (env name, firmware version, a photo).
 
 |                                                                                                        | Board                                                                                                           |                                                                                               |
 | :----------------------------------------------------------------------------------------------------: | --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
@@ -91,7 +92,7 @@ Stable.
 
 ## Install
 
-Download the app from the [latest release](https://github.com/HermannBjorgvin/Clawdmeter/releases/latest).
+Download the app from the [latest release](https://github.com/Vsemil/Clawdmeter/releases/latest).
 
 | OS             | Package     | Install                                                                                                                          |
 | -------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------- |
@@ -99,7 +100,7 @@ Download the app from the [latest release](https://github.com/HermannBjorgvin/Cl
 | Windows        | `.msi`      | Run the installer. If SmartScreen blocks it, choose **More info → Run anyway**.                                                  |
 | Debian, Ubuntu | `.deb`      | `sudo apt install ./clawdmeter_<version>_amd64.deb`                                                                              |
 | Other Linux    | `.AppImage` | `chmod +x clawdmeter-*.AppImage`, then run it.                                                                                   |
-| NixOS, Nix     | Flake       | `nix run github:HermannBjorgvin/Clawdmeter`                                                                                      |
+| NixOS, Nix     | Flake       | `nix run github:Vsemil/Clawdmeter`                                                                                      |
 
 The macOS and Windows packages aren't signed with a publisher certificate.
 See the [user guide](docs/user-guide.md#installation) for Linux requirements,
