@@ -95,9 +95,8 @@ fn wait_text(secs: i64) -> String {
 /// "Usage paused by Anthropic until 14:05" (`usage::paused_message`, in the
 /// interface language and without the full stop).
 fn paused_text(until: i64, utc_offset: i64) -> String {
-    let secs = (until + utc_offset).rem_euclid(86_400);
-    let at = format!("{:02}:{:02}", secs / 3600, secs % 3600 / 60);
-    trf("Usage paused by Anthropic until {}", &[&at])
+    let msg = crate::i18n::core_message(&clawdmeter_core::usage::paused_message(until, utc_offset));
+    msg.trim_end_matches('.').to_owned()
 }
 
 /// What the refresh button can do right now.
@@ -386,11 +385,6 @@ mod tests {
     fn paused_text_shows_the_local_time() {
         assert_eq!(paused_text(14 * 3600 + 5 * 60, 0), "Usage paused by Anthropic until 14:05");
         assert_eq!(paused_text(23 * 3600, 3 * 3600), "Usage paused by Anthropic until 02:00");
-        assert_eq!(
-            paused_text(4_600, 0),
-            clawdmeter_core::usage::paused_message(4_600, 0).trim_end_matches('.'),
-            "the same text as the tray's"
-        );
     }
 
     #[test]

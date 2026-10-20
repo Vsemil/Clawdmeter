@@ -57,14 +57,15 @@ impl TrayState {
         }
     }
 
-    /// Short label for the status line.
+    /// Short label for the status line, in the interface language.
     pub fn label(self) -> &'static str {
+        use crate::i18n::tr;
         match self {
-            TrayState::Connected => "Connected",
-            TrayState::Stale => "Usage out of date",
-            TrayState::Searching => "Looking for device",
-            TrayState::AuthError => "Signed out",
-            TrayState::Attention => "Claude needs you",
+            TrayState::Connected => tr("Connected"),
+            TrayState::Stale => tr("Usage out of date"),
+            TrayState::Searching => tr("Looking for device"),
+            TrayState::AuthError => tr("Signed out"),
+            TrayState::Attention => tr("Claude needs you"),
         }
     }
 }

@@ -87,12 +87,12 @@ impl Items {
             account: MenuItem::new(tr("No usage data yet"), false, None),
             session: MenuItem::new(tr("Session  –"), false, None),
             weekly: MenuItem::new(tr("Weekly  –"), false, None),
-            refresh: MenuItem::new(tr("Refresh usage"), true, None),
-            mute: CheckMenuItem::new(tr("Mute chimes"), true, false, None),
-            open: MenuItem::new(tr("Open Clawdmeter"), true, None),
+            refresh: MenuItem::new("", true, None),
+            mute: CheckMenuItem::new("", true, false, None),
+            open: MenuItem::new("", true, None),
             update: MenuItem::new(tr("Flash firmware…"), true, None),
-            settings: MenuItem::new(tr("Settings…"), true, None),
-            quit: MenuItem::new(tr("Quit Clawdmeter"), true, None),
+            settings: MenuItem::new("", true, None),
+            quit: MenuItem::new("", true, None),
             lang: Cell::new(crate::i18n::lang()),
         };
         let _ = it.menu.append_items(&[
@@ -111,6 +111,7 @@ impl Items {
             &PredefinedMenuItem::separator(),
             &it.quit,
         ]);
+        it.relabel();
         it
     }
 
@@ -128,7 +129,7 @@ impl Items {
         if self.lang.replace(lang) != lang {
             self.relabel();
         }
-        let label = if snap.link == "no_adapter" { tr("Bluetooth unavailable") } else { tr(snap.tray_state().label()) };
+        let label = if snap.link == "no_adapter" { tr("Bluetooth unavailable") } else { snap.tray_state().label() };
         self.status.set_text(format!("Clawdmeter · {label}"));
         let account = snap.account.as_deref().map(|a| tilde(a, &paths.home));
         self.account.set_text(match (account, snap.age(now)) {
@@ -168,7 +169,7 @@ fn icon_for(state: TrayState) -> Option<Icon> {
 }
 
 fn tooltip(snap: &StatusSnapshot) -> String {
-    let mut t = format!("Clawdmeter · {}", tr(snap.tray_state().label()));
+    let mut t = format!("Clawdmeter · {}", snap.tray_state().label());
     if let (Some(s), Some(w)) = (snap.session_pct, snap.week_pct) {
         t.push_str(&trf(" · Session {}% · Weekly {}%", &[&s, &w]));
     }

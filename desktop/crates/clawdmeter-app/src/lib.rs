@@ -94,16 +94,16 @@ impl Page {
         }
     }
 
-    /// The sidebar label.
+    /// The sidebar label, in the interface language.
     pub fn label(self) -> &'static str {
         match self {
-            Page::Overview => "Overview",
-            Page::Device => "Device",
-            Page::Flash => "Flash",
-            Page::Accounts => "Accounts",
-            Page::Hooks => "Hooks",
-            Page::Settings => "Settings",
-            Page::Setup => "Setup",
+            Page::Overview => i18n::tr("Overview"),
+            Page::Device => i18n::tr("Device"),
+            Page::Flash => i18n::tr("Flash"),
+            Page::Accounts => i18n::tr("Accounts"),
+            Page::Hooks => i18n::tr("Hooks"),
+            Page::Settings => i18n::tr("Settings"),
+            Page::Setup => i18n::tr("Setup"),
         }
     }
 }

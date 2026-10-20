@@ -315,7 +315,7 @@ impl SettingsView {
                         Tone::Bad,
                         tr("No response from the device. Reconnect USB or update the firmware, then try again.").into(),
                     ),
-                    Err(e) => (Tone::Bad, e.to_string()),
+                    Err(e) => (Tone::Bad, super::flasher::device_error(&e)),
                 });
             },
         );

@@ -177,7 +177,7 @@ impl AppView {
                 )
                 .group_hover(page.as_str(), move |s| s.text_color(text)),
             )
-            .child(div().flex_1().child(page_label(page)))
+            .child(div().flex_1().child(page.label()))
             .when_some(badge, |d, b| {
                 d.child(
                     div()
@@ -258,19 +258,6 @@ impl AppView {
 
 /// The author's profile, linked from the sidebar footer.
 const CREDIT_URL: &str = "https://x.com/HermannBjorgvin";
-
-/// The sidebar label for a page ([`Page::label`] in the interface language).
-fn page_label(page: Page) -> &'static str {
-    match page {
-        Page::Overview => tr("Overview"),
-        Page::Device => tr("Device"),
-        Page::Flash => tr("Flash"),
-        Page::Accounts => tr("Accounts"),
-        Page::Hooks => tr("Hooks"),
-        Page::Settings => tr("Settings"),
-        Page::Setup => tr("Setup"),
-    }
-}
 
 /// The sidebar icon for a page.
 fn page_icon(page: Page) -> &'static str {

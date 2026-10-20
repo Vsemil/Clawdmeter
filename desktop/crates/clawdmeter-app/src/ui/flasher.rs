@@ -37,7 +37,7 @@ fn step_names() -> [&'static str; 5] {
 }
 
 /// [`DeviceError`]'s message in the interface language.
-fn device_error(e: &DeviceError) -> String {
+pub(crate) fn device_error(e: &DeviceError) -> String {
     match e {
         DeviceError::PermissionDenied { port } if cfg!(target_os = "linux") => trf(
             "No permission to open {}. Add yourself to the dialout group (uucp on Arch): sudo usermod -aG dialout $USER, then log out and back in.",

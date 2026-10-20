@@ -3,8 +3,10 @@
 //! checked (once a day).
 //!
 //! `releases/latest` never returns a prerelease, so a stable app is only
-//! offered stable firmware. An app that is itself a prerelease (its version
-//! has a `-`, like `2.0.0-rc.2`) asks for its own tag first, so it flashes
+//! offered stable firmware. An app that is itself a prerelease (`-rc`,
+//! `-beta` or `-alpha`, like `2.0.0-rc.2`; release.yml publishes the same
+//! ones as prereleases, and this fork's `-ru.N` as full releases) asks for
+//! its own tag first, so it flashes
 //! the firmware built with it, and falls back to the latest release
 //! ([`release_for_app`]).
 
@@ -181,9 +183,10 @@ pub fn latest_release(repo: &str) -> Result<Release, ReleaseError> {
     release_from_api(&api, get_string)
 }
 
-/// A version with a pre-release part (`2.0.0-rc.2`).
+/// A prerelease version (`2.0.0-rc.2`, `-beta`, `-alpha`): the same rule
+/// release.yml publishes prereleases by. `2.2.3-ru.1` is a full release.
 pub fn is_prerelease(version: &str) -> bool {
-    version.contains('-')
+    version.split_once('-').is_some_and(|(_, pre)| ["rc", "beta", "alpha"].iter().any(|p| pre.starts_with(p)))
 }
 
 /// The release an app at `app_version` should flash and offer as an update:
@@ -333,6 +336,12 @@ mod tests {
 
     fn manifest(version: &str) -> String {
         MANIFEST.replace("1.9.0", version)
+    }
+
+    #[test]
+    fn fork_releases_are_not_prereleases() {
+        assert!(is_prerelease("2.0.0-rc.2") && is_prerelease("v1.0.0-beta.1") && is_prerelease("1.0.0-alpha"));
+        assert!(!is_prerelease("2.2.3-ru.1") && !is_prerelease("2.2.3-ru.1-5-gef56ded") && !is_prerelease("2.2.3"));
     }
 
     #[test]

@@ -67,10 +67,8 @@ static portMUX_TYPE  state_lock = portMUX_INITIALIZER_UNLOCKED;  // rendering, p
 
 // Alert melodies: one PSRAM buffer each, at full level, rendered after the
 // ding. None without PSRAM: the ding stands in.
-static int16_t* mel_pcm[MELODY_COUNT]   = {};
-static uint32_t mel_len[MELODY_COUNT]   = {};
-static volatile bool mel_ready[MELODY_COUNT] = {};
-static volatile uint8_t mel_next = 0;   // the melody the play task streams
+static int16_t* volatile mel_pcm[MELODY_COUNT] = {};   // set once its render is done
+static uint32_t mel_len[MELODY_COUNT] = {};
 
 static bool es8311_setup(void) {
     es = es8311_create(0, cfg.es8311_addr);   // I2C port 0 (shared Wire bus)
@@ -140,15 +138,14 @@ static void render_melodies(void) {
             buf[n] = melody_sample((Melody)m, n, rate, 1.0f);
             if ((n & 2047) == 2047) vTaskDelay(1);
         }
-        mel_pcm[m] = buf;
         mel_len[m] = frames;
-        mel_ready[m] = true;
+        mel_pcm[m] = buf;
     }
     Serial.printf("chime: rendered the melodies in %lu ms (at %lu ms since boot)\n",
                   (unsigned long)(millis() - t0), (unsigned long)millis());
 }
 
-static void start_playback(void);
+static void start_playback(uint8_t m = MELODY_DING);
 
 static void render_task(void* arg) {
     if (!render()) Serial.println("chime: no room to pre-render the ding");
@@ -197,9 +194,14 @@ static void output_on(bool on) {
     else es8311_voice_mute(es, !on);
 }
 
+// Play one sound (`arg`: a Melody; MELODY_DING is the ding, the others
+// their rendered buffers).
 static void chime_task(void* arg) {
     // Never renders here: this runs above the loop. render_task does it.
-    const bool buffered = pcm != nullptr;
+    const uint8_t m = (uint8_t)(uintptr_t)arg;
+    const int16_t* buf = m == MELODY_DING ? pcm : mel_pcm[m];
+    const uint32_t frames = m == MELODY_DING ? pcm_frames : mel_len[m];
+    const bool buffered = buf != nullptr;
 #if !SOC_CPU_HAS_FPU
     if (!buffered) {
         Serial.println("chime: no ding buffer (not enough internal RAM), skipped");
@@ -209,7 +211,7 @@ static void chime_task(void* arg) {
 #endif
     output_on(true);
     delay(8);                                  // let the amp settle (avoids turn-on pop)
-    if (buffered) stream_mono(pcm, pcm_frames);
+    if (buffered) stream_mono(buf, frames);
 #if SOC_CPU_HAS_FPU
     else stream_live();
 #endif
@@ -221,26 +223,13 @@ static void chime_task(void* arg) {
     vTaskDelete(nullptr);
 }
 
-static void melody_task(void* arg) {
-    const uint8_t m = mel_next;
-    output_on(true);
-    delay(8);
-    stream_mono(mel_pcm[m], mel_len[m]);
-    memset(chunk, 0, sizeof(chunk));
-    i2s.write((uint8_t*)chunk, sizeof(chunk));
-    delay(I2S_DMA_FRAMES * 1000 / cfg.sample_rate + 5);
-    output_on(false);
-    playing = false;
-    vTaskDelete(nullptr);
-}
-
-static void start_playback(void) {
+static void start_playback(uint8_t m) {
     portENTER_CRITICAL(&state_lock);
     const bool busy = playing;
     playing = true;
     portEXIT_CRITICAL(&state_lock);
     if (busy) return;
-    if (xTaskCreatePinnedToCore(chime_task, "chime", 4096, nullptr, CHIME_TASK_PRIORITY, nullptr,
+    if (xTaskCreatePinnedToCore(chime_task, "chime", 4096, (void*)(uintptr_t)m, CHIME_TASK_PRIORITY, nullptr,
                                 CHIME_TASK_CORE) != pdPASS)
         playing = false;   // couldn't spawn — stay silent rather than wedge the flag
 }
@@ -276,17 +265,8 @@ void chime_play(void) {
 }
 
 void chime_play_melody(uint8_t melody) {
-    if (melody >= MELODY_COUNT || !mel_ready[melody]) { chime_play(); return; }   // the ding stands in
-    if (!ready) return;
-    portENTER_CRITICAL(&state_lock);
-    const bool busy = playing;
-    playing = true;
-    portEXIT_CRITICAL(&state_lock);
-    if (busy) return;
-    mel_next = melody;
-    if (xTaskCreatePinnedToCore(melody_task, "melody", 4096, nullptr, CHIME_TASK_PRIORITY, nullptr,
-                                CHIME_TASK_CORE) != pdPASS)
-        playing = false;
+    if (melody >= MELODY_COUNT || melody == MELODY_DING || !mel_pcm[melody]) { chime_play(); return; }   // the ding stands in
+    if (ready) start_playback(melody);
 }
 
 void chime_set_level(uint8_t pct) {
