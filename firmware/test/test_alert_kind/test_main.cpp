@@ -33,9 +33,29 @@ static void test_melodies_and_acts(void) {
     TEST_ASSERT_EQUAL_INT(MELODY_DONE, alert_kind_melody(AK_DONE));
     TEST_ASSERT_EQUAL_INT(MELODY_DING, alert_kind_melody(AK_NONE));
     const char *a, *b;
-    alert_kind_acts(AK_DONE, &a, &b);
+    alert_kind_acts(AK_DONE, 0, &a, &b);
     TEST_ASSERT_EQUAL_STRING("dancing", a);
-    alert_kind_acts(AK_PERMISSION, &a, &b);
+    // A finished turn cheers with several pairs, each two different acts.
+    const char* firsts[8];
+    int distinct = 0;
+    for (uint32_t pick = 0; pick < 8; pick++) {
+        alert_kind_acts(AK_DONE, pick, &a, &b);
+        TEST_ASSERT_TRUE(strcmp(a, b) != 0);
+        bool seen = false;
+        for (int i = 0; i < distinct; i++)
+            if (strcmp(firsts[i], a) == 0) seen = true;
+        if (!seen) firsts[distinct++] = a;
+    }
+    TEST_ASSERT_TRUE(distinct >= 3);
+    // About one finished turn in three opens with the trumpet; asks never do.
+    int fanfares = 0;
+    for (uint32_t pick = 0; pick < 9; pick++) {
+        if (alert_kind_fanfare(AK_DONE, pick)) fanfares++;
+        TEST_ASSERT_NULL(alert_kind_fanfare(AK_PERMISSION, pick));
+    }
+    TEST_ASSERT_EQUAL_INT(3, fanfares);
+    TEST_ASSERT_EQUAL_STRING("trumpet", alert_kind_fanfare(AK_DONE, 0));
+    alert_kind_acts(AK_PERMISSION, 12345, &a, &b);
     TEST_ASSERT_EQUAL_STRING("pointing", a);
     TEST_ASSERT_EQUAL_STRING("waving", b);
 }

@@ -22,6 +22,10 @@ this firmware behaves like upstream when the app doesn't send them.
 - Typed alerts (`k`): each kind has its caption, colour and melody on the
   device, and the big Clawd plays its own acts (a finished turn dances). The
   melodies are strikes of the ding at other notes (`melody.cpp`).
+- A finished turn (and a refilled window) cheers with one of five pairs of
+  official loops (dancing, jumping happy, jumping, waving), not always the
+  same one; about one in three gets a fanfare instead: he walks out onto the
+  meters and plays the trumpet scene (boards with the full-size performer).
 - `done`: the Stop hook raises it for a turn of 45 s or more that left no
   shell task or agent running. Prompts the harness writes don't count as you;
   an idle prompt waiting on background work doesn't alert.
@@ -41,6 +45,12 @@ this firmware behaves like upstream when the app doesn't send them.
 - The wall-clock reset time after the countdown, where it fits.
 - The reason the numbers aren't fresh (`er`: log in again, token expired,
   rate limited, no network) on the status line.
+
+## Clawd
+
+- A new official scene, `Clawd-Book.gif` (found by name probing on
+  claude.ai): he puts on glasses and reads. It plays in the idle group's shows
+  and the screensaver's calm dips.
 
 ## Calendar
 

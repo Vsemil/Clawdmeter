@@ -61,6 +61,7 @@ const ANIMS = [
   // the natural outro at f31.
   { file: 'Clawd-RacingCar.gif',     name: 'racing car',    category: 'persona', loop: [15, 30] },
   { file: 'Clawd-Trumpet.gif',       name: 'trumpet',       category: 'persona' },
+  { file: 'Clawd-Book.gif',          name: 'book',          category: 'persona' },
   { file: 'Clawd-Basketball.gif',    name: 'basketball',    category: 'persona' },
   { file: 'Clawd-Skateboard.gif',    name: 'skateboard',    category: 'persona' },
   { file: 'Clawd-Soccer.lottie.json', name: 'soccer',       category: 'persona', kind: 'lottie' },

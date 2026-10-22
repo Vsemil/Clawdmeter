@@ -24,6 +24,7 @@ clawd/persona/Clawd-Soccer.gif
 clawd/persona/Clawd-Basketball.gif
 clawd/persona/Clawd-Skateboard.gif
 clawd/persona/Clawd-Trumpet.gif
+clawd/persona/Clawd-Book.gif
 clawd/persona/7bbe5052.gif
 clawd/persona/ac0fa108.gif
 spotlights/claude-code-celebration/Clawd-Dancing.gif

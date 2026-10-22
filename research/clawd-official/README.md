@@ -60,6 +60,7 @@ Decoding recipe: for frame t, paint every group whose opacity at t is 100.
 | `Clawd-Basketball.gif` | 56 | 90 ms | dribbling (unlisted) |
 | `Clawd-Skateboard.gif` | 74 | 90 ms | skateboarding (unlisted) |
 | `Clawd-Trumpet.gif` | 81 | 90 ms | golden trumpet + floating notes (unlisted) |
+| `Clawd-Book.gif` | 107 | 80 ms | puts on round glasses, reads a blue book turning pages, puts both away (unlisted; found by name probing 2026-10-22) |
 | `7bbe5052.gif` | 11 | 160 ms | sailing a boat (short loop) |
 | `ac0fa108.gif` | 68 | 80 ms | sailing a boat (full scene) |
 

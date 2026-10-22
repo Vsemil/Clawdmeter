@@ -39,7 +39,7 @@ static void run_for(uint32_t ms) {
 // Without the full-size sprite nothing performs, so nothing runs home.
 static void assert_every_beat_seen(bool has_big) {
     for (int b = 0; b < BEAT_COUNT; b++)
-        if (has_big || b != B_RUN_HOME) TEST_ASSERT_TRUE_MESSAGE(seen[b], BEAT_NAMES[b]);
+        if (has_big || (b != B_RUN_HOME && b != B_FANFARE)) TEST_ASSERT_TRUE_MESSAGE(seen[b], BEAT_NAMES[b]);
 }
 
 static void assert_one_clawd(void) {
@@ -136,7 +136,8 @@ static void fuzz(uint32_t seed, uint32_t total_ms, bool has_big) {
         case 3: case 4:  sig.event_fired = true; sig.event = "psb"[fz_next() % 3]; sig.event_seq = ++es; break;
         case 5:          pct += 1; d.session_pct = pct; break;
         case 6:          sig.session_reset = true; pct = 0; d.session_pct = pct; break;
-        case 7:          director_alert("needs you"); continue;
+        case 7:          director_alert_scene(fz_next() % 3 == 0 ? "trumpet" : NULL);
+                         director_alert("needs you"); continue;
         case 8:          director_alert_clear(); continue;
         case 9: case 10: director_tap((int)fz_range(0, 479)); continue;
         case 11:         (void)director_button(true); continue;
@@ -321,6 +322,48 @@ static void attention_short(bool has_big) {
 static void test_short_attention_animation_with_full_size_sprite(void) { attention_short(true); }
 static void test_short_attention_animation_without_full_size_sprite(void) { attention_short(false); }
 
+// A finished turn's fanfare: with the performer he plays the scene on the
+// meters instead of the big Clawd's acts, then the alert stays up as usual;
+// without it, the acts. A tap during the scene stops it and ends the alert.
+static void test_fanfare(void) {
+    world.has_big = true;
+    fresh_director();
+    director_alert_scene("trumpet");
+    director_alert("done");
+    run_for(500);
+    TEST_ASSERT_EQUAL_STRING("fanfare", director_beat_name());
+    TEST_ASSERT_FALSE(fake_attention_animating());
+    // Played, waved, walked off: seated for the rest (the sim's alert lasts 20 s).
+    for (int i = 0; i < 190 && strcmp(director_beat_name(), "fanfare") == 0; i++) run_for(100);
+    TEST_ASSERT_EQUAL_STRING("attention", director_beat_name());
+    TEST_ASSERT_TRUE(attention_on);
+    TEST_ASSERT_FALSE(fake_attention_animating());
+    director_alert_clear();
+    run_for(10 * 1000);
+    assert_one_clawd();
+
+    fresh_director();                            // cut short by a tap
+    director_alert_scene("trumpet");
+    director_alert("done");
+    run_for(4000);
+    director_tap(240);
+    run_for(15 * 1000);
+    TEST_ASSERT_FALSE(attention_on);
+    TEST_ASSERT_TRUE(strcmp(director_beat_name(), "fanfare") != 0);
+    assert_one_clawd();
+
+    world.has_big = false;                       // no performer: the acts
+    fresh_director();
+    director_alert_scene("trumpet");
+    director_alert("done");
+    run_for(1000);
+    TEST_ASSERT_EQUAL_STRING("attention", director_beat_name());
+    TEST_ASSERT_TRUE(fake_attention_animating());
+    director_alert_clear();
+    run_for(10 * 1000);
+    assert_one_clawd();
+}
+
 static void test_fuzz_one_clawd_at_every_attention_animation(void) {
     static const int SETTINGS[] = { 0, 10, 30 };
     for (int i = 0; i < 3 && !broke; i++) {
@@ -349,5 +392,6 @@ int main(int, char**) {
     RUN_TEST(test_short_attention_animation_with_full_size_sprite);
     RUN_TEST(test_short_attention_animation_without_full_size_sprite);
     RUN_TEST(test_fuzz_one_clawd_at_every_attention_animation);
+    RUN_TEST(test_fanfare);
     return UNITY_END();
 }

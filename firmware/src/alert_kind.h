@@ -29,5 +29,11 @@ AlertKind alert_kind_parse(const char* k);   // "" / unknown: AK_NONE
 Melody    alert_kind_melody(AlertKind k);
 // The text is the message as sent rather than the kind's caption.
 bool      alert_kind_shows_message(AlertKind k);
-// The two acts the big Clawd alternates for this kind.
-void      alert_kind_acts(AlertKind k, const char** a, const char** b);
+// The two acts the big Clawd alternates for this kind. A finished turn (and
+// a refilled window) cheers with one of several pairs: `pick` (any number,
+// e.g. the time) chooses.
+void      alert_kind_acts(AlertKind k, uint32_t pick, const char** a, const char** b);
+// The scene this alert may open with on the meters (director_alert_scene):
+// about one finished turn (or refilled window) in three gets the trumpet's
+// fanfare; NULL otherwise.
+const char* alert_kind_fanfare(AlertKind k, uint32_t pick);

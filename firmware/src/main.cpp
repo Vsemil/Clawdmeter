@@ -282,10 +282,11 @@ static void check_serial_cmd() {
                 while (*rest == ' ') rest++;
                 const AlertKind k = alert_kind_parse(kind);
                 const char *act_a, *act_b;
-                alert_kind_acts(k, &act_a, &act_b);
+                alert_kind_acts(k, millis(), &act_a, &act_b);
                 mascot_attention_acts(act_a, act_b);
                 ui_set_alert_style(k, rest);
                 idle_note_activity();
+                director_alert_scene(alert_kind_fanfare(k, millis()));
                 director_alert(*rest ? rest : kind);
                 sound_hal_melody(alert_kind_melody(k));
                 Serial.printf("{\"alert_kind\":\"%s\"}\n", kind);
@@ -581,9 +582,10 @@ void loop() {
                 Serial.println("attention — mascot");
                 idle_note_activity();
                 const char *act_a, *act_b;
-                alert_kind_acts(kind, &act_a, &act_b);
+                alert_kind_acts(kind, millis(), &act_a, &act_b);
                 mascot_attention_acts(act_a, act_b);
                 ui_set_alert_style(kind, usage.alert_project);
+                director_alert_scene(alert_kind_fanfare(kind, millis()));
                 director_alert(usage.alert_msg);
             }
             if (usage.alert_clear) director_alert_clear();
@@ -595,10 +597,11 @@ void loop() {
                 char pct[8] = "";
                 if (sig.limit_crossed) snprintf(pct, sizeof(pct), "%d%%", sig.limit_crossed);
                 const char *act_a, *act_b;
-                alert_kind_acts(own, &act_a, &act_b);
+                alert_kind_acts(own, millis(), &act_a, &act_b);
                 mascot_attention_acts(act_a, act_b);
                 ui_set_alert_style(own, pct);
                 Serial.printf("usage: %s\n", own == AK_LIMIT ? "limit close" : "limits refreshed");
+                director_alert_scene(alert_kind_fanfare(own, millis()));
                 director_alert_local(S->alert_caption[own], own == AK_LIMIT ? 60000 : 20000);
                 if (own == AK_LIMIT && usage.chime) sound_hal_melody(MELODY_LIMIT);
             }

@@ -35,10 +35,27 @@ bool alert_kind_shows_message(AlertKind k) {
     return k == AK_NONE || k == AK_MESSAGE;
 }
 
-void alert_kind_acts(AlertKind k, const char** a, const char** b) {
+// A finished turn's cheers: official loops only (each fits the corner too).
+static const char* const CHEERS[][2] = {
+    { "dancing",       "jumping happy" },
+    { "jumping happy", "waving" },
+    { "jumping",       "dancing" },
+    { "dancing",       "waving" },
+    { "jumping happy", "jumping" },
+};
+
+const char* alert_kind_fanfare(AlertKind k, uint32_t pick) {
+    return (k == AK_DONE || k == AK_RESET) && pick % 3 == 0 ? "trumpet" : nullptr;
+}
+
+void alert_kind_acts(AlertKind k, uint32_t pick, const char** a, const char** b) {
     switch (k) {
         case AK_DONE:
-        case AK_RESET:  *a = "dancing";  *b = "jumping happy"; return;
+        case AK_RESET: {
+            const char* const* c = CHEERS[pick % (sizeof(CHEERS) / sizeof(CHEERS[0]))];
+            *a = c[0]; *b = c[1];
+            return;
+        }
         case AK_IDLE:
         case AK_CAL:
         case AK_CAL_START:

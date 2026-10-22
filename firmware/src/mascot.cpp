@@ -248,7 +248,7 @@ lv_obj_t* mascot_create(lv_obj_t* parent, int sx, int feet, int c) {
     if (lurk) lurk_feet_y = ((SPLASH_GRID - CLAWD_ART_H) / 2 + lurk->oy + lurk->h) * lurk_cell;
     size_t big_bytes = 0;
     // Every act an alert kind can ask for (alert_kind_acts), so the buffer fits them all.
-    static const char* const BIG[] = { "lurking", "walking", "waving", "pointing", "dancing", "jumping happy" };
+    static const char* const BIG[] = { "lurking", "walking", "waving", "pointing", "dancing", "jumping happy", "jumping" };
     for (const char* n : BIG) {
         const ClawdAnim* a = clawd_anim(n);
         if (!a) continue;

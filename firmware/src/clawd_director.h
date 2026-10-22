@@ -31,6 +31,10 @@ void director_tick(void);
 // Per parsed payload, after signals_ingest().
 void director_on_payload(const UsageData* d, const SignalsUpdate* sig);
 void director_alert(const char* message);   // attention hook fired
+// The scene the next alert opens with (a finished turn's fanfare): he plays
+// it once on the meters instead of the big Clawd's acts, where the performer
+// can. NULL = the acts. Set before each director_alert().
+void director_alert_scene(const char* name);
 void director_alert_clear(void);            // the session moved on
 bool director_take_dismissed(void);         // an alert ended on the device since the last call
 // The device's own alert (the limit thresholds): like director_alert, but

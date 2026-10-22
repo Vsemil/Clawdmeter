@@ -28,16 +28,16 @@ static bool      shown = false;                // img not hidden
 
 // ─── Mood groups ─────────────────────────────────────────────────────────────
 #define GROUP_COUNT 4
-#define GROUP_MAX   4
+#define GROUP_MAX   5   // shorter rows end in NULL
 static const char* const GROUP_NAMES[GROUP_COUNT][GROUP_MAX] = {
-    { "magnifier", "walking", "pointing", "lurking" },        // idle / sleepy
+    { "magnifier", "walking", "pointing", "lurking", "book" }, // idle / sleepy
     { "crab walking", "waving", "trumpet", "basketball" },    // normal pace
     { "laptop", "dancing", "skateboard", "soccer" },          // active
     { "racing car", "cloud", "sailing scene", "jumping happy" }, // heavy burn
 };
 // The screensaver's calm dips: gentle Idle-group scenes only (lurking is a
 // corner act and pointing is his "noticing" gesture).
-static const char* const CALM_NAMES[] = { "magnifier", "walking" };
+static const char* const CALM_NAMES[] = { "magnifier", "walking", "book" };
 
 // ─── Performer ───────────────────────────────────────────────────────────────
 enum PerfState { P_OFF, P_STAND, P_WALK, P_SCENE, P_CHOREO };
@@ -363,7 +363,10 @@ void performer_perform_group(int group, uint32_t loop_ms, bool calm) {
     const char*& last = calm ? last_calm : last_show;
     const int pick = clawd_pick_no_repeat(names, n, last, &rng);
     const ClawdAnim* a = pick >= 0 ? clawd_anim(names[pick]) : NULL;
-    if (a) last = a->name;
+    if (a) {
+        last = a->name;
+        Serial.printf("performer: %s\n", a->name);
+    }
     scene_start(a, loop_ms);
 }
 

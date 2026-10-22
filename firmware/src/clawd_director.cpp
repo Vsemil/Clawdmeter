@@ -29,15 +29,21 @@ enum Beat {
     B_RUN_HOME,      // the performance stops, he runs off, the corner walks home
     B_ATTENTION,     // the big Clawd fetches you
     B_PEEK,          // a tap on the meters: hop, duck out, the face comes up curious for a while
+    B_FANFARE,       // an alert's scene on the meters (a finished turn), then the alert as usual
 };
 static const char* const BEAT_NAMES[] = {
     "home", "corner", "show", "screensaver", "face-home", "run-home", "attention", "peek",
+    "fanfare",
 };
 
 static Beat     beat = B_HOME;
 static uint8_t  step = 0;
 static uint32_t wait_until = 0;
 static bool     performing = false;   // he's out as the performer on the meters
+// director_alert_scene: the scene the next alert opens with, and whether the
+// one now up still has it to play.
+static const char* fanfare_scene = NULL;
+static bool     fanfare_due = false;
 static bool     notice_wake = false;  // B_FACE_HOME: blink first (he noticed you)
 
 // Attention
@@ -114,7 +120,7 @@ static void perform_enter(uint16_t speed_pct) {
 // waiting; an alert that ended mid-transition with nobody around puts the
 // screensaver back; otherwise he walks back to his seat from the left.
 static void arrive_meters(void) {
-    if (attention_on) { go(B_ATTENTION); return; }
+    if (attention_on) { go(fanfare_due ? B_FANFARE : B_ATTENTION); return; }
     if (resume_screensaver) {
         resume_screensaver = false;
         if (!minimal && ui_meters_live()) { go(B_SCREENSAVER); return; }
@@ -172,6 +178,7 @@ static bool attn_anim_running(uint32_t now) {
 static void end_attention(AttnEnd how) {
     if (!attention_on) return;
     attention_on = false;
+    fanfare_due = false;
     if (attention_end_tells_host(how) && !attention_local) attention_dismissed = true;
     attention_local = false;
     const bool engaged = attn_engaged || (int32_t)(last_engagement - attn_mark) > 0;
@@ -207,6 +214,11 @@ void director_alert(const char* message) {
     ui_set_alert_text(message);
     if (attention_on) return;                 // refresh text + timers only
     attention_on = true;
+    // His part of it: the scene on the meters, where he can play one and
+    // isn't held still; else the big Clawd's acts (B_ATTENTION).
+    const ClawdTuning& t = clawd_tuning();
+    fanfare_due = fanfare_scene && clawd_anim_index(fanfare_scene) >= 0 && performer_available() &&
+                  !minimal && t.shows && clawd_attn_anim() > 0;
     if (beat == B_ATTENTION) { step = 0; return; }
     // Attention never waits: interrupt whatever is on.
     if (face_visible() || performing) {
@@ -215,9 +227,11 @@ void director_alert(const char* message) {
         if (face_visible()) go(B_FACE_HOME);
         else                go(B_RUN_HOME);
     } else {
-        go(B_ATTENTION);
+        go(fanfare_due ? B_FANFARE : B_ATTENTION);
     }
 }
+
+void director_alert_scene(const char* name) { fanfare_scene = name; }
 
 void director_alert_clear(void) { end_attention(ATTN_END_CLEAR); }
 
@@ -375,6 +389,8 @@ static void apply_minimal(bool on) {
 
 // ─── Init ────────────────────────────────────────────────────────────────────
 void director_init(void) {
+    fanfare_scene = NULL;
+    fanfare_due = false;
     face_init();
     show_gate_clear(&show_gate);
     turn_clear(&turn);
@@ -560,6 +576,7 @@ static void run_run_home(uint32_t now) {
 
 static void run_attention(uint32_t now) {
     if (step == 0) {
+        fanfare_due = false;                  // reached by another path: the acts instead
         if (attn_anim_running(now)) {
             mascot_attention(true);
         } else {
@@ -587,6 +604,52 @@ static void run_attention(uint32_t now) {
         return;
     }
     go(B_HOME);
+}
+
+// An alert's scene (director_alert_scene, a finished turn's fanfare): he
+// steps out, walks back on full size, plays it once, waves and walks off,
+// and the corner Clawd sits down for the rest of the alert (B_ATTENTION with
+// his part played). Ended or replaced by another alert meanwhile: the
+// performance stops as a show's does.
+static void run_fanfare(uint32_t now) {
+    fanfare_due = false;
+    if (!attention_on || !fanfare_scene) {
+        if (performing) { go(B_RUN_HOME); return; }   // arrive_meters: the new alert, or home
+        go(B_ATTENTION);
+        if (!attention_on) step = 1;                  // over: its wrap-up (seat, or the screensaver)
+        return;
+    }
+    if (!settled(now)) return;
+    switch (step) {
+    case 0:  // steps out through the left edge
+        mascot_leave(150);
+        next_step();
+        break;
+    case 1:  // gone: he walks back on, full size
+        if (!mascot_away()) return;
+        perform_enter(150);
+        next_step();
+        break;
+    case 2:
+        performer_perform(clawd_anim_index(fanfare_scene), 0);
+        next_step();
+        break;
+    case 3:
+        performer_perform(clawd_anim_index("waving"), 0);
+        next_step();
+        break;
+    case 4:
+        performer_walk_off(PERFORMER_LEFT, 150);
+        next_step();
+        break;
+    default:  // off the edge: the corner Clawd walks back in for the rest of the alert
+        if (performer_visible()) return;
+        performing = false;
+        attn_anim_done = true;
+        mascot_return(-1, 150);
+        go(B_ATTENTION);
+        break;
+    }
 }
 
 // A tap on the meters (tap_home already started the startled hop, or sent
@@ -676,6 +739,7 @@ void director_tick(void) {
     case B_RUN_HOME:    run_run_home(now); break;
     case B_ATTENTION:   run_attention(now); break;
     case B_PEEK:        run_peek(now); break;
+    case B_FANFARE:     run_fanfare(now); break;
     }
 }
 
